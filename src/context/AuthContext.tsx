@@ -43,7 +43,7 @@ import { isCloudAuthConfigured } from "../lib/supabase";
 type AuthContextValue = {
   ready: boolean;
   user: LocalUser | null;
-  /** True when VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY are set. */
+  /** True when VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY look valid. */
   cloudAuthConfigured: boolean;
   /** Admin PIN unlocked for this browser tab (Admin tools). */
   adminUnlocked: boolean;
