@@ -167,31 +167,64 @@ export function ProfilePage() {
           <ul className="shop-list">
             {shops.map((shop) => (
               <li key={shop.id} className="shop-row">
-                <div>
-                  <strong>{shop.name}</strong>
-                  <p className="meta">{shop.deliveryAddress}</p>
+                <div className="shop-row-head">
+                  <strong className="shop-row-name">{shop.name}</strong>
+                  <div className="shop-row-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-icon shop-row-action"
+                      aria-label="編輯"
+                      title="編輯"
+                      onClick={() => startEdit(shop)}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        aria-hidden="true"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-icon shop-row-action"
+                      aria-label="刪除"
+                      title="刪除"
+                      onClick={() => {
+                        if (!confirm(`刪除「${shop.name}」？`)) return;
+                        setShops(removeShop(user.id, shop.id));
+                        if (editingId === shop.id) resetShopForm();
+                        setShopStatus("已刪除店舖。");
+                      }}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        aria-hidden="true"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M3 6h18" />
+                        <path d="M8 6V4h8v2" />
+                        <path d="M19 6l-1 14H6L5 6" />
+                        <path d="M10 11v6" />
+                        <path d="M14 11v6" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-                <div className="shop-row-actions">
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => startEdit(shop)}
-                  >
-                    編輯
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      if (!confirm(`刪除「${shop.name}」？`)) return;
-                      setShops(removeShop(user.id, shop.id));
-                      if (editingId === shop.id) resetShopForm();
-                      setShopStatus("已刪除店舖。");
-                    }}
-                  >
-                    刪除
-                  </button>
-                </div>
+                <p className="meta shop-row-address">{shop.deliveryAddress}</p>
               </li>
             ))}
           </ul>

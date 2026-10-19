@@ -1628,36 +1628,64 @@ textarea {
 
 .shop-list {
   list-style: none;
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
 .shop-row {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
   border: 1px solid var(--mist);
-  border-radius: 12px;
+  border-radius: 10px;
   background: color-mix(in srgb, white 65%, var(--bone));
 }
 
-.shop-row > div:first-child {
+.shop-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   min-width: 0;
 }
 
-.shop-row .meta {
-  margin: 4px 0 0;
+.shop-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.shop-row-address {
+  margin: 0;
   white-space: pre-wrap;
+  line-height: 1.35;
 }
 
 .shop-row-actions {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.shop-row-action {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: 8px;
+  color: var(--ink);
+}
+
+.shop-row-action:active {
+  transform: scale(0.96);
 }
 
 .shop-form-title {
