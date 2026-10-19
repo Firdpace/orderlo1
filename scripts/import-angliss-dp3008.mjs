@@ -1,10 +1,7 @@
 /**
- * Merge Angliss DP-3008 Product Catalogue 2026 (text PDF) into angliss vendor.
- * Source text: pdftotext -layout <pdf> /tmp/angliss-dp3008.txt
- * Catalogue has no prices — SKUs added with price 0 (enquire via WhatsApp).
- * Prior priced Dairy/GCL SKUs are kept.
+ * Legacy entrypoint — DP-3008 is now part of the full Angliss merge
+ * (MP-1408 + DP-3008 + GO-0221). Prefer:
  *
- * Run: node scripts/import-angliss-dp3008.mjs
- * (Prefer the Python one-shot used in this session if regenerating.)
+ *   node scripts/import-angliss-catalogs.mjs
  */
-console.log("See conversation import; catalog already merged in importedCatalog.json");
+import "./import-angliss-catalogs.mjs";

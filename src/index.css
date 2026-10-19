@@ -598,11 +598,30 @@ textarea {
   transition: background 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
+.btn-ask {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--olive) 35%, transparent);
+  background: color-mix(in srgb, var(--linen) 88%, var(--olive));
+  color: var(--olive-mid);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: default;
+  user-select: none;
+}
+
 .btn-add-lg {
   width: 48px;
   height: 48px;
   min-width: 48px;
   font-size: 1.4rem;
+}
+
+.btn-ask.btn-add-lg {
+  width: auto;
+  min-width: 72px;
+  padding: 0 14px;
+  font-size: 0.95rem;
 }
 
 .btn-add-flash {
