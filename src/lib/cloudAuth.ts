@@ -6,10 +6,13 @@
 import {
   ADMIN_PHONE_E164,
   ADMIN_SEED_PASSWORD,
+  LEGACY_SEED_USER_PASSWORD,
+  MIN_PASSWORD_LENGTH,
   SEED_USER_PASSWORD,
   SEED_USER_PHONES_E164,
   type LocalUser,
   type UserStatus,
+  assertPasswordMinLength,
   ensureSeedUsers,
   hashPassword,
   loadUsers,
@@ -143,6 +146,30 @@ async function verifyLocalPassword(
   return user;
 }
 
+/** Map Supabase Auth English errors to clear Chinese copy. */
+function mapAuthErrorMessage(message: string): string {
+  if (/password should be at least|at least 6 character/i.test(message)) {
+    return "密碼至少 6 個字元。";
+  }
+  if (/invalid login|invalid credentials/i.test(message)) {
+    return "密碼不正確。";
+  }
+  if (/email not confirmed/i.test(message)) {
+    return "帳戶電郵尚未確認。請在 Supabase Auth 關閉 Confirm email。";
+  }
+  return message;
+}
+
+function isSeedCredential(phoneE164: string, password: string): boolean {
+  if (phoneE164 === ADMIN_PHONE_E164 && password === ADMIN_SEED_PASSWORD) {
+    return true;
+  }
+  return (
+    SEED_USER_PHONES_E164.includes(phoneE164) &&
+    password === SEED_USER_PASSWORD
+  );
+}
+
 async function ensureAuthUser(
   phoneE164: string,
   password: string,
@@ -150,6 +177,7 @@ async function ensureAuthUser(
 ): Promise<void> {
   const sb = getSupabase();
   if (!sb) throw new Error("Cloud auth is not configured.");
+  assertPasswordMinLength(password);
   const email = phoneToEmailAlias(phoneE164);
 
   const { error: signUpError } = await sb.auth.signUp({
@@ -168,8 +196,31 @@ async function ensureAuthUser(
     signUpError &&
     !/already|registered|exists/i.test(signUpError.message)
   ) {
-    throw new Error(signUpError.message);
+    throw new Error(mapAuthErrorMessage(signUpError.message));
   }
+}
+
+/**
+ * First-time cloud path: Auth user missing → signUp then signIn.
+ * Used for seed/admin credentials and local-bridge upgrades.
+ */
+async function provisionAndSignIn(
+  phoneE164: string,
+  password: string,
+  status: UserStatus,
+): Promise<{ user: { id: string } }> {
+  const sb = getSupabase();
+  if (!sb) throw new Error("Cloud auth is not configured.");
+  const email = phoneToEmailAlias(phoneE164);
+
+  await ensureAuthUser(phoneE164, password, status);
+  const signIn = await sb.auth.signInWithPassword({ email, password });
+  if (signIn.error || !signIn.data.user) {
+    throw new Error(
+      mapAuthErrorMessage(signIn.error?.message ?? "登入失敗。"),
+    );
+  }
+  return { user: signIn.data.user };
 }
 
 function assertLoginAllowed(profile: CloudProfile): void {
@@ -190,7 +241,7 @@ export async function cloudSignup(
 
   const phoneE164 = normalizeHkPhone(phoneInput);
   if (!phoneE164) throw new Error("請輸入有效香港手機號碼（8 位數字）。");
-  if (password.length < 4) throw new Error("密碼最少 4 個字元。");
+  assertPasswordMinLength(password);
   if (phoneE164 === ADMIN_PHONE_E164) {
     throw new Error("此號碼已保留，請直接登入。");
   }
@@ -208,7 +259,7 @@ export async function cloudSignup(
     if (/already|registered|exists/i.test(error.message)) {
       throw new Error("此號碼已註冊，請直接登入。");
     }
-    throw new Error(error.message);
+    throw new Error(mapAuthErrorMessage(error.message));
   }
 
   // Do not keep a session for pending signups.
@@ -235,51 +286,93 @@ export async function cloudLogin(
 
   const phoneE164 = normalizeHkPhone(phoneInput);
   if (!phoneE164) throw new Error("請輸入有效香港手機號碼（8 位數字）。");
+  // Reject short passwords before hitting Supabase (clear Chinese error).
+  assertPasswordMinLength(password);
 
   const email = phoneToEmailAlias(phoneE164);
-  let signIn = await sb.auth.signInWithPassword({ email, password });
+  const firstTry = await sb.auth.signInWithPassword({ email, password });
+  let authUserId: string | null = firstTry.data.user?.id ?? null;
+  let bridgedLocalId: string | null = null;
 
-  if (signIn.error) {
-    // Bridge: local account exists with this password → create Auth user.
+  if (firstTry.error || !authUserId) {
+    const registry = await loadUsers();
+    const localRecord = registry.users.find((u) => u.phoneE164 === phoneE164);
     const localUser = await verifyLocalPassword(phoneE164, password);
-    if (!localUser) {
-      // Distinguish unknown vs bad password via local registry when possible.
-      const registry = await loadUsers();
-      const existsLocal = registry.users.some((u) => u.phoneE164 === phoneE164);
-      if (existsLocal) throw new Error("密碼不正確。");
-      if (/invalid login|invalid credentials/i.test(signIn.error.message)) {
-        throw new Error("此號碼尚未註冊，請先註冊。");
+
+    if (localUser) {
+      if (localUser.status === "pending") {
+        throw new Error("帳戶待審批，請等候管理員批准。");
       }
-      throw new Error(signIn.error.message);
+      if (localUser.status === "disabled") {
+        throw new Error("此帳戶已被停用，請聯絡管理員。");
+      }
+      // Bridge: local password OK but Auth user missing → signUp then signIn.
+      const provisioned = await provisionAndSignIn(
+        phoneE164,
+        password,
+        localUser.status,
+      );
+      authUserId = provisioned.user.id;
+      bridgedLocalId = localUser.id;
+    } else if (isSeedCredential(phoneE164, password)) {
+      // Seed/admin first-time cloud login even if local hash differs.
+      const provisioned = await provisionAndSignIn(
+        phoneE164,
+        password,
+        "enabled",
+      );
+      authUserId = provisioned.user.id;
+      if (localRecord) bridgedLocalId = localRecord.id;
+    } else if (localRecord) {
+      // Local account exists but password wrong — guide short-password users.
+      const legacyHash = await hashPassword(
+        LEGACY_SEED_USER_PASSWORD,
+        localRecord.salt,
+      );
+      if (localRecord.passwordHash === legacyHash) {
+        throw new Error(
+          `此帳戶本地密碼少於 ${MIN_PASSWORD_LENGTH} 個字元，無法登入雲端。請將密碼改為至少 ${MIN_PASSWORD_LENGTH} 個字元後再試（測試帳戶可用 ${SEED_USER_PASSWORD}）。`,
+        );
+      }
+      throw new Error("密碼不正確。");
+    } else if (
+      firstTry.error &&
+      /invalid login|invalid credentials/i.test(firstTry.error.message)
+    ) {
+      throw new Error("此號碼尚未註冊，請先註冊。");
+    } else {
+      throw new Error(
+        mapAuthErrorMessage(firstTry.error?.message ?? "登入失敗。"),
+      );
     }
-
-    if (localUser.status === "pending") {
-      throw new Error("帳戶待審批，請等候管理員批准。");
-    }
-    if (localUser.status === "disabled") {
-      throw new Error("此帳戶已被停用，請聯絡管理員。");
-    }
-
-    await ensureAuthUser(phoneE164, password, localUser.status);
-    signIn = await sb.auth.signInWithPassword({ email, password });
-    if (signIn.error || !signIn.data.user) {
-      throw new Error(signIn.error?.message ?? "登入失敗。");
-    }
-    migrateLocalUserData(localUser.id, signIn.data.user.id);
   }
 
-  const authUser = signIn.data.user;
-  if (!authUser) throw new Error("登入失敗。");
+  if (!authUserId) throw new Error("登入失敗。");
 
-  let profile = await fetchProfile(authUser.id);
+  if (bridgedLocalId) {
+    migrateLocalUserData(bridgedLocalId, authUserId);
+  }
+
+  let profile = await fetchProfile(authUserId);
   if (!profile) {
-    profile = await ensureOwnProfile(
-      authUser.id,
-      phoneE164,
-      phoneE164 === ADMIN_PHONE_E164 ? "enabled" : "enabled",
-    );
+    profile = await ensureOwnProfile(authUserId, phoneE164, "enabled");
   }
   if (!profile) throw new Error("找不到帳戶資料。");
+
+  // Ensure admin flag/status for the sole admin phone after first provision.
+  if (phoneE164 === ADMIN_PHONE_E164) {
+    if (!profile.isAdmin || profile.status !== "enabled") {
+      await sb
+        .from("profiles")
+        .update({ status: "enabled", is_admin: true })
+        .eq("id", profile.id);
+      profile = (await fetchProfile(profile.id)) ?? {
+        ...profile,
+        status: "enabled",
+        isAdmin: true,
+      };
+    }
+  }
 
   assertLoginAllowed(profile);
 
@@ -388,7 +481,7 @@ export async function cloudChangePassword(
 ): Promise<void> {
   const sb = getSupabase();
   if (!sb) throw new Error("Cloud auth is not configured.");
-  if (nextPassword.length < 4) throw new Error("新密碼最少 4 個字元。");
+  assertPasswordMinLength(nextPassword, "new");
 
   const { data: userData } = await sb.auth.getUser();
   const email = userData.user?.email;
@@ -401,7 +494,7 @@ export async function cloudChangePassword(
   if (verify.error) throw new Error("現有密碼不正確。");
 
   const { error } = await sb.auth.updateUser({ password: nextPassword });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(mapAuthErrorMessage(error.message));
 }
 
 /**

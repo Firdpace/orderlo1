@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { displayPhone } from "../lib/auth";
+import { displayPhone, MIN_PASSWORD_LENGTH } from "../lib/auth";
 import {
   addShop,
   listShopsForUser,
@@ -75,8 +75,8 @@ export function ProfilePage() {
       setPwError("兩次新密碼不一致。");
       return;
     }
-    if (nextPw.length < 4) {
-      setPwError("新密碼最少 4 個字元。");
+    if (nextPw.length < MIN_PASSWORD_LENGTH) {
+      setPwError(`新密碼至少 ${MIN_PASSWORD_LENGTH} 個字元。`);
       return;
     }
     setPwBusy(true);
@@ -105,7 +105,9 @@ export function ProfilePage() {
 
       <section className="admin-card">
         <h2>更改密碼</h2>
-        <p className="meta">請輸入現有密碼，再設新密碼（最少 4 個字元）。</p>
+        <p className="meta">
+          請輸入現有密碼，再設新密碼（至少 {MIN_PASSWORD_LENGTH} 個字元）。
+        </p>
         <form className="checkout-form" onSubmit={(e) => void onPasswordSubmit(e)}>
           <label>
             現有密碼
@@ -114,7 +116,6 @@ export function ProfilePage() {
               autoComplete="current-password"
               value={currentPw}
               onChange={(e) => setCurrentPw(e.target.value)}
-              minLength={4}
               required
             />
           </label>
@@ -125,8 +126,8 @@ export function ProfilePage() {
               autoComplete="new-password"
               value={nextPw}
               onChange={(e) => setNextPw(e.target.value)}
-              placeholder="最少 4 個字元"
-              minLength={4}
+              placeholder={`至少 ${MIN_PASSWORD_LENGTH} 個字元`}
+              minLength={MIN_PASSWORD_LENGTH}
               required
             />
           </label>
@@ -138,7 +139,7 @@ export function ProfilePage() {
               value={confirmPw}
               onChange={(e) => setConfirmPw(e.target.value)}
               placeholder="再輸入一次"
-              minLength={4}
+              minLength={MIN_PASSWORD_LENGTH}
               required
             />
           </label>

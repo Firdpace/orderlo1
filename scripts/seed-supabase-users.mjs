@@ -10,14 +10,14 @@
  *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/seed-supabase-users.mjs
  *
  * Email alias: 852XXXXXXXX@orderlo.local
- * Passwords: admin `orderlo`, seed users `0000` (change after first login).
+ * Passwords: admin `orderlo`, seed users `000000` (Supabase min length 6).
  */
 
 import { createClient } from "@supabase/supabase-js";
 
 const ADMIN_PHONE = "+85266169905";
 const ADMIN_PASSWORD = "orderlo";
-const SEED_PASSWORD = "0000";
+const SEED_PASSWORD = "000000";
 const SEED_PHONES = [
   "+85292209785",
   "+85264630346",

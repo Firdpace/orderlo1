@@ -10,8 +10,26 @@ export const ADMIN_PHONE_E164 = "+85266169905";
 export const SEED_USER_PHONE_E164 = "+85292209785";
 /** Default password only used when seeding a fresh admin account. */
 export const ADMIN_SEED_PASSWORD = "orderlo";
-/** Shared password for seeded non-admin accounts (user-provided). */
-export const SEED_USER_PASSWORD = "0000";
+/**
+ * Shared password for seeded non-admin accounts.
+ * Must be ≥6 chars — Supabase Auth rejects shorter passwords.
+ */
+export const SEED_USER_PASSWORD = "000000";
+/** Legacy short seed password (pre–cloud-auth); migrated to SEED_USER_PASSWORD. */
+export const LEGACY_SEED_USER_PASSWORD = "0000";
+/** Min password length (aligned with Supabase Auth). */
+export const MIN_PASSWORD_LENGTH = 6;
+
+export function assertPasswordMinLength(
+  password: string,
+  kind: "password" | "new" = "password",
+): void {
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(
+      kind === "new" ? "新密碼至少 6 個字元。" : "密碼至少 6 個字元。",
+    );
+  }
+}
 
 /** Extra approved non-admin seed phones (8 HK digits → +852…). */
 export const SEED_USER_PHONES_E164: readonly string[] = [
@@ -244,12 +262,33 @@ export async function ensureSeedUsers(): Promise<{
         }),
       );
     } else {
-      // Keep existing password; ensure approved + non-admin.
-      users = users.map((u) =>
-        u.phoneE164 === phoneE164
-          ? { ...u, status: "enabled" as const, isAdmin: false }
-          : u,
+      // Upgrade legacy short seed password (0000 → 000000) for Supabase Auth.
+      const legacyHash = await hashPassword(
+        LEGACY_SEED_USER_PASSWORD,
+        existing.salt,
       );
+      if (existing.passwordHash === legacyHash) {
+        const salt = makeSalt();
+        const passwordHash = await hashPassword(SEED_USER_PASSWORD, salt);
+        users = users.map((u) =>
+          u.phoneE164 === phoneE164
+            ? {
+                ...u,
+                salt,
+                passwordHash,
+                status: "enabled" as const,
+                isAdmin: false,
+              }
+            : u,
+        );
+      } else {
+        // Keep custom password; ensure approved + non-admin.
+        users = users.map((u) =>
+          u.phoneE164 === phoneE164
+            ? { ...u, status: "enabled" as const, isAdmin: false }
+            : u,
+        );
+      }
     }
   }
 
@@ -281,7 +320,7 @@ export function writeAuthSession(session: AuthSession | null): void {
 export async function signup(phoneInput: string, password: string): Promise<LocalUser> {
   const phoneE164 = normalizeHkPhone(phoneInput);
   if (!phoneE164) throw new Error("請輸入有效香港手機號碼（8 位數字）。");
-  if (password.length < 4) throw new Error("密碼最少 4 個字元。");
+  assertPasswordMinLength(password);
 
   const registry = await loadUsers();
   if (registry.users.some((u) => u.phoneE164 === phoneE164)) {
@@ -380,7 +419,7 @@ export async function changePassword(
   currentPassword: string,
   nextPassword: string,
 ): Promise<void> {
-  if (nextPassword.length < 4) throw new Error("新密碼最少 4 個字元。");
+  assertPasswordMinLength(nextPassword, "new");
   const registry = await loadUsers();
   const user = registry.users.find((u) => u.id === userId);
   if (!user) throw new Error("找不到帳戶。");

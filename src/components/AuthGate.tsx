@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useAuth } from "../context/AuthContext";
+import { MIN_PASSWORD_LENGTH } from "../lib/auth";
 
 type Mode = "login" | "signup";
 
@@ -81,8 +82,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
             autoComplete={mode === "login" ? "current-password" : "new-password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="最少 4 個字元"
-            minLength={4}
+            placeholder={`至少 ${MIN_PASSWORD_LENGTH} 個字元`}
+            minLength={mode === "signup" ? MIN_PASSWORD_LENGTH : undefined}
             required
           />
         </label>
@@ -95,7 +96,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               placeholder="再輸入一次"
-              minLength={4}
+              minLength={MIN_PASSWORD_LENGTH}
               required
             />
           </label>

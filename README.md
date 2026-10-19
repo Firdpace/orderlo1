@@ -29,11 +29,15 @@ Copy `.env.example` → `.env.local` and set:
 Apply `supabase/migrations/20261019180000_profiles_sessions.sql` in the Supabase SQL Editor.  
 Disable **Confirm email** under Auth settings (phone UX uses email aliases `852XXXXXXXX@orderlo.local`).
 
-Optional seed (service role, local only):
+Optional seed (service role, local only — never put the service role key on Vercel):
 
 ```bash
-SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run seed:supabase
+SUPABASE_URL=https://ovftzpdjkcsrmeyynrzf.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=... \
+npm run seed:supabase
 ```
+
+Seed passwords: admin `+85266169905` / `orderlo`; other seed phones / `000000` (6 zeros; Supabase Auth min length).
 
 Without these env vars the app stays local-first (cart/catalog/login still work). Admin shows “cloud auth not configured” in the Sessions area.
 
