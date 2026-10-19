@@ -1619,6 +1619,53 @@ textarea {
   justify-content: flex-end;
 }
 
+.user-admin-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-panel {
+  padding: 0 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--mist);
+  border-radius: 10px;
+  background: color-mix(in srgb, white 80%, var(--bone));
+}
+
+.session-row > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-status-warn {
+  color: #8a4b00;
+  background: color-mix(in srgb, #f5d9a8 45%, white);
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
 .auth-info {
   margin: 0;
   font-size: 0.9rem;

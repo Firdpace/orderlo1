@@ -9,6 +9,12 @@ import {
   type LocalUser,
   type UserStatus,
 } from "../lib/auth";
+import {
+  listSessionsForUser,
+  readDeviceSessionId,
+  revokeSession,
+  type CloudSession,
+} from "../lib/cloudSessions";
 import { isValidPin } from "../lib/pin";
 
 export function AdminLoginPage() {
@@ -69,6 +75,19 @@ export function AdminLoginPage() {
   );
 }
 
+function formatTs(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("zh-HK", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export function AdminPage() {
   const {
     adminUnlocked,
@@ -77,6 +96,8 @@ export function AdminPage() {
     user: me,
     refreshUsers,
     setUserStatus,
+    cloudAuthConfigured,
+    logout,
   } = useAuth();
   const {
     vendors,
@@ -99,6 +120,12 @@ export function AdminPage() {
     confirm: "",
   });
   const [users, setUsers] = useState<LocalUser[]>([]);
+  const [sessionsOpenFor, setSessionsOpenFor] = useState<string | null>(null);
+  const [sessionsByUser, setSessionsByUser] = useState<
+    Record<string, CloudSession[]>
+  >({});
+  const [sessionsBusy, setSessionsBusy] = useState(false);
+  const myDeviceSessionId = readDeviceSessionId();
 
   const selectedVendor = useMemo(
     () => vendors.find((v) => v.id === vendorId),
@@ -134,6 +161,54 @@ export function AdminPage() {
     const list = await setUserStatus(u.id, next);
     setUsers(list);
     setStatus(`${displayPhone(u.phoneE164)} → ${statusLabel(next)}`);
+  };
+
+  const loadSessions = async (userId: string) => {
+    if (!cloudAuthConfigured) return;
+    setSessionsBusy(true);
+    try {
+      const list = await listSessionsForUser(userId);
+      setSessionsByUser((prev) => ({ ...prev, [userId]: list }));
+    } finally {
+      setSessionsBusy(false);
+    }
+  };
+
+  const toggleSessions = (userId: string) => {
+    if (sessionsOpenFor === userId) {
+      setSessionsOpenFor(null);
+      return;
+    }
+    setSessionsOpenFor(userId);
+    void loadSessions(userId);
+  };
+
+  const onRevoke = async (userId: string, session: CloudSession) => {
+    const isSelfCurrent =
+      session.id === myDeviceSessionId && userId === me?.id;
+    if (
+      !confirm(
+        isSelfCurrent
+          ? "撤銷這個裝置的登入？你會被登出。"
+          : "撤銷此登入工作階段？該裝置下次開啟 App 時會被登出。",
+      )
+    ) {
+      return;
+    }
+    setSessionsBusy(true);
+    try {
+      await revokeSession(session.id);
+      if (isSelfCurrent) {
+        logout();
+        return;
+      }
+      await loadSessions(userId);
+      setStatus("已撤銷登入工作階段。");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "撤銷失敗。");
+    } finally {
+      setSessionsBusy(false);
+    }
   };
 
   return (
@@ -269,60 +344,121 @@ export function AdminPage() {
         <p className="meta">
           新註冊為待審批。可批准啟用、停用。唯獨 +852 66169905
           為管理員。
+          {cloudAuthConfigured
+            ? " 雲端登入已啟用 — 可查看／撤銷各裝置工作階段。"
+            : ""}
         </p>
+        {!cloudAuthConfigured ? (
+          <p className="admin-status admin-status-warn">
+            Cloud auth not configured — set VITE_SUPABASE_URL and
+            VITE_SUPABASE_ANON_KEY on Vercel to enable multi-device sessions.
+          </p>
+        ) : null}
         {users.length === 0 ? (
           <p className="meta">未有註冊用戶。</p>
         ) : (
           <ul className="user-admin-list">
             {users.map((u) => (
-              <li key={u.id} className="user-admin-row">
-                <div>
-                  <strong>{displayPhone(u.phoneE164)}</strong>
-                  <span className="meta">
-                    {u.isAdmin ? "Admin · " : ""}
-                    {statusLabel(u.status)}
-                    {me?.id === u.id ? " · 你" : ""}
-                  </span>
+              <li key={u.id} className="user-admin-item">
+                <div className="user-admin-row">
+                  <div>
+                    <strong>{displayPhone(u.phoneE164)}</strong>
+                    <span className="meta">
+                      {u.isAdmin ? "Admin · " : ""}
+                      {statusLabel(u.status)}
+                      {me?.id === u.id ? " · 你" : ""}
+                    </span>
+                  </div>
+                  <div className="user-admin-actions">
+                    {cloudAuthConfigured ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => toggleSessions(u.id)}
+                      >
+                        {sessionsOpenFor === u.id ? "收起 Sessions" : "Sessions"}
+                      </button>
+                    ) : null}
+                    {u.status === "pending" ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => void applyStatus(u, "enabled")}
+                      >
+                        批准
+                      </button>
+                    ) : null}
+                    {u.status !== "enabled" && u.status !== "pending" ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => void applyStatus(u, "enabled")}
+                      >
+                        啟用
+                      </button>
+                    ) : null}
+                    {u.status === "enabled" && !u.isAdmin ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={me?.id === u.id}
+                        onClick={() => void applyStatus(u, "disabled")}
+                      >
+                        停用
+                      </button>
+                    ) : null}
+                    {u.status === "pending" ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => void applyStatus(u, "disabled")}
+                      >
+                        拒絕
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="user-admin-actions">
-                  {u.status === "pending" ? (
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => void applyStatus(u, "enabled")}
-                    >
-                      批准
-                    </button>
-                  ) : null}
-                  {u.status !== "enabled" && u.status !== "pending" ? (
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => void applyStatus(u, "enabled")}
-                    >
-                      啟用
-                    </button>
-                  ) : null}
-                  {u.status === "enabled" && !u.isAdmin ? (
+                {sessionsOpenFor === u.id ? (
+                  <div className="session-panel">
+                    {sessionsBusy && !sessionsByUser[u.id] ? (
+                      <p className="meta">載入 Sessions…</p>
+                    ) : (sessionsByUser[u.id] ?? []).length === 0 ? (
+                      <p className="meta">此用戶暫無活躍登入裝置。</p>
+                    ) : (
+                      <ul className="session-list">
+                        {(sessionsByUser[u.id] ?? []).map((s) => (
+                          <li key={s.id} className="session-row">
+                            <div>
+                              <strong>{s.label || "Device"}</strong>
+                              <span className="meta">
+                                建立 {formatTs(s.createdAt)}
+                                {" · "}
+                                最後活躍 {formatTs(s.lastSeenAt)}
+                                {s.id === myDeviceSessionId ? " · 此裝置" : ""}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-ghost"
+                              disabled={sessionsBusy}
+                              onClick={() => void onRevoke(u.id, s)}
+                            >
+                              撤銷
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     <button
                       type="button"
                       className="btn btn-ghost"
-                      disabled={me?.id === u.id}
-                      onClick={() => void applyStatus(u, "disabled")}
+                      disabled={sessionsBusy}
+                      onClick={() => void loadSessions(u.id)}
                     >
-                      停用
+                      重新整理 Sessions
                     </button>
-                  ) : null}
-                  {u.status === "pending" ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => void applyStatus(u, "disabled")}
-                    >
-                      拒絕
-                    </button>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>

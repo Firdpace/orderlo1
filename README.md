@@ -15,8 +15,27 @@ Mobile-first multi-vendor ordering for kitchenware and cooking ingredients.
 
 1. Only **+852 66169905** sees Admin; unlock with Admin PIN (default `1234`)
 2. Approve / enable / disable users
-3. Set the sales WhatsApp number and upload vendor quotations (Excel/CSV preferred)
-4. Upload **overwrites** that vendor’s previous product list and bumps the quotation version
+3. With Supabase configured: open **Sessions** per user to see devices and revoke logins
+4. Set the sales WhatsApp number and upload vendor quotations (Excel/CSV preferred)
+5. Upload **overwrites** that vendor’s previous product list and bumps the quotation version
+
+## Cloud auth (multi-device sessions)
+
+Copy `.env.example` → `.env.local` and set:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+Apply `supabase/migrations/20261019180000_profiles_sessions.sql` in the Supabase SQL Editor.  
+Disable **Confirm email** under Auth settings (phone UX uses email aliases `852XXXXXXXX@orderlo.local`).
+
+Optional seed (service role, local only):
+
+```bash
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run seed:supabase
+```
+
+Without these env vars the app stays local-first (cart/catalog/login still work). Admin shows “cloud auth not configured” in the Sessions area.
 
 ## Run
 

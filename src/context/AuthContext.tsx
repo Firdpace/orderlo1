@@ -10,25 +10,41 @@ import {
 import {
   type LocalUser,
   type UserStatus,
-  changePassword as authChangePassword,
+  changePassword as localChangePassword,
   ensureSeedUsers,
-  listUsers,
-  login as authLogin,
-  logout as authLogout,
-  resolveSessionUser,
-  setUserStatus as authSetStatus,
-  signup as authSignup,
+  listUsers as localListUsers,
+  login as localLogin,
+  logout as localLogout,
+  resolveSessionUser as localResolveSession,
+  setUserStatus as localSetStatus,
+  signup as localSignup,
 } from "../lib/auth";
+import {
+  cloudChangePassword,
+  cloudLogin,
+  cloudLogout,
+  cloudSignup,
+  listCloudUsers,
+  resolveCloudSessionUser,
+  setCloudUserStatus,
+} from "../lib/cloudAuth";
+import {
+  heartbeatDeviceSession,
+  readDeviceSessionId,
+} from "../lib/cloudSessions";
 import {
   changeAdminPin,
   readAdminPinSession,
   verifyAdminPin,
   writeAdminPinSession,
 } from "../lib/pin";
+import { isCloudAuthConfigured } from "../lib/supabase";
 
 type AuthContextValue = {
   ready: boolean;
   user: LocalUser | null;
+  /** True when VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY are set. */
+  cloudAuthConfigured: boolean;
   /** Admin PIN unlocked for this browser tab (Admin tools). */
   adminUnlocked: boolean;
   login: (phone: string, password: string) => Promise<void>;
@@ -50,6 +66,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const cloudAuthConfigured = isCloudAuthConfigured();
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<LocalUser | null>(null);
   const [adminUnlocked, setAdminUnlocked] = useState(
@@ -60,9 +77,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
+        // Always ensure local seed registry (bridge + offline fallback).
         await ensureSeedUsers();
-        const u = await resolveSessionUser();
-        if (!cancelled) setUser(u);
+        if (cloudAuthConfigured) {
+          const u = await resolveCloudSessionUser();
+          if (!cancelled) setUser(u);
+        } else {
+          const u = await localResolveSession();
+          if (!cancelled) setUser(u);
+        }
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -70,36 +93,96 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [cloudAuthConfigured]);
 
-  const login = useCallback(async (phone: string, password: string) => {
-    const u = await authLogin(phone, password);
-    setUser(u);
-  }, []);
+  // Heartbeat last_seen on load + periodic while cloud session is active.
+  useEffect(() => {
+    if (!cloudAuthConfigured || !user) return;
+    const tick = () => {
+      const id = readDeviceSessionId();
+      if (!id) return;
+      void heartbeatDeviceSession(id).then((ok) => {
+        if (!ok) {
+          void cloudLogout().then(() => {
+            writeAdminPinSession(false);
+            setAdminUnlocked(false);
+            setUser(null);
+          });
+        }
+      });
+    };
+    tick();
+    const handle = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(handle);
+  }, [cloudAuthConfigured, user]);
 
-  const signup = useCallback(async (phone: string, password: string) => {
-    const u = await authSignup(phone, password);
-    // Pending accounts are not auto-logged-in.
-    return u;
-  }, []);
+  const login = useCallback(
+    async (phone: string, password: string) => {
+      if (cloudAuthConfigured) {
+        const u = await cloudLogin(phone, password);
+        setUser(u);
+        return;
+      }
+      const u = await localLogin(phone, password);
+      setUser(u);
+    },
+    [cloudAuthConfigured],
+  );
+
+  const signup = useCallback(
+    async (phone: string, password: string) => {
+      if (cloudAuthConfigured) {
+        const u = await cloudSignup(phone, password);
+        // Mirror into local registry for offline bridge later.
+        try {
+          await localSignup(phone, password);
+        } catch {
+          // already exists locally — fine
+        }
+        return u;
+      }
+      return localSignup(phone, password);
+    },
+    [cloudAuthConfigured],
+  );
 
   const logout = useCallback(() => {
-    authLogout();
+    if (cloudAuthConfigured) {
+      void cloudLogout();
+    } else {
+      localLogout();
+    }
     writeAdminPinSession(false);
     setAdminUnlocked(false);
     setUser(null);
-  }, []);
+  }, [cloudAuthConfigured]);
 
-  const refreshUsers = useCallback(() => listUsers(), []);
+  const refreshUsers = useCallback(async () => {
+    if (cloudAuthConfigured) return listCloudUsers();
+    return localListUsers();
+  }, [cloudAuthConfigured]);
 
   const setUserStatus = useCallback(
     async (userId: string, status: UserStatus) => {
-      const users = await authSetStatus(userId, status);
+      const users = cloudAuthConfigured
+        ? await setCloudUserStatus(userId, status)
+        : await localSetStatus(userId, status);
+
+      // Keep local mirror when cloud is on (best effort).
+      if (cloudAuthConfigured) {
+        try {
+          await localSetStatus(userId, status);
+        } catch {
+          // local ids may differ — ignore
+        }
+      }
+
       setUser((prev) => {
         if (!prev) return prev;
         const updated = users.find((u) => u.id === prev.id);
         if (updated && updated.status !== "enabled") {
-          authLogout();
+          if (cloudAuthConfigured) void cloudLogout();
+          else localLogout();
           writeAdminPinSession(false);
           setAdminUnlocked(false);
           return null;
@@ -108,7 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       return users;
     },
-    [],
+    [cloudAuthConfigured],
   );
 
   const setUserEnabled = useCallback(
@@ -121,9 +204,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const changePassword = useCallback(
     async (currentPassword: string, nextPassword: string) => {
       if (!user) throw new Error("請先登入。");
-      await authChangePassword(user.id, currentPassword, nextPassword);
+      if (cloudAuthConfigured) {
+        await cloudChangePassword(currentPassword, nextPassword);
+        return;
+      }
+      await localChangePassword(user.id, currentPassword, nextPassword);
     },
-    [user],
+    [user, cloudAuthConfigured],
   );
 
   const unlockAdmin = useCallback(async (pin: string) => {
@@ -145,6 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       ready,
       user,
+      cloudAuthConfigured,
       adminUnlocked,
       login,
       signup,
@@ -160,6 +248,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       ready,
       user,
+      cloudAuthConfigured,
       adminUnlocked,
       login,
       signup,
