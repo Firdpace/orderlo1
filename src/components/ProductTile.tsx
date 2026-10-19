@@ -49,10 +49,9 @@ export function ProductTile({ product }: { product: Product }) {
     product.unitPrice != null && product.unitPrice > 0
       ? `${formatPrice(product.unitPrice)}${product.unitPriceLabel || ""}`
       : "";
-  const canAdd = product.price > 0;
+  const hasPrice = product.price > 0;
 
   const onAdd = () => {
-    if (!canAdd) return;
     addItem(product.id);
     setFlashed(true);
     window.setTimeout(() => setFlashed(false), 450);
@@ -75,7 +74,7 @@ export function ProductTile({ product }: { product: Product }) {
           {product.brand ? <span>{product.brand}</span> : null}
           {pkg ? <span>{pkg}</span> : null}
           <span className="product-tile-price">
-            {canAdd ? formatPrice(product.price) : "查詢報價"}
+            {hasPrice ? formatPrice(product.price) : "查詢報價"}
           </span>
           {unitPrice ? <span className="product-tile-unitprice">{unitPrice}</span> : null}
         </div>
@@ -89,21 +88,15 @@ export function ProductTile({ product }: { product: Product }) {
         >
           <IconScale />
         </Link>
-        {canAdd ? (
-          <button
-            type="button"
-            className={`btn btn-icon btn-add ${flashed ? "btn-add-flash" : ""}`}
-            onClick={onAdd}
-            aria-label={`加入 ${product.name}`}
-            title="加入"
-          >
-            +
-          </button>
-        ) : (
-          <span className="btn btn-icon btn-ask" title="查詢報價" aria-label="查詢報價">
-            ?
-          </span>
-        )}
+        <button
+          type="button"
+          className={`btn btn-icon btn-add ${flashed ? "btn-add-flash" : ""}`}
+          onClick={onAdd}
+          aria-label={`加入 ${product.name}`}
+          title="加入"
+        >
+          +
+        </button>
       </div>
     </article>
   );

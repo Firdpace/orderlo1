@@ -95,3 +95,30 @@ export function listWaHistoryForVendor(
   const store = loadWaHistory();
   return store[userId]?.[vendorId] ?? [];
 }
+
+/** Remove one history entry for this user × vendor. Other vendors untouched. */
+export function deleteWaHistoryEntry(args: {
+  userId: string;
+  vendorId: string;
+  entryId: string;
+}): boolean {
+  const store = loadWaHistory();
+  const byUser = store[args.userId];
+  if (!byUser) return false;
+  const existing = byUser[args.vendorId];
+  if (!existing?.length) return false;
+  const next = existing.filter((entry) => entry.id !== args.entryId);
+  if (next.length === existing.length) return false;
+  if (next.length === 0) {
+    delete byUser[args.vendorId];
+  } else {
+    byUser[args.vendorId] = next;
+  }
+  if (Object.keys(byUser).length === 0) {
+    delete store[args.userId];
+  } else {
+    store[args.userId] = byUser;
+  }
+  writeStore(store);
+  return true;
+}

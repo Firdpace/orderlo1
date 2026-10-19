@@ -7,9 +7,17 @@ export type BuiltWhatsApp = {
   total: number;
 };
 
+/** List price present — price ≤ 0 means 查報價 / ask quote. */
+export function isPricedProduct(product: Pick<Product, "price">): boolean {
+  return product.price > 0;
+}
+
+const UNPRICED_SEPARATOR = "另外想問問以下報價同貨期";
+
 /**
- * WhatsApp order text: shop greeting header, then
- * `name × qty = subtotal` lines, optional grand total.
+ * WhatsApp order text: shop greeting header, then priced lines
+ * (`name × qty = HKD subtotal` + Total), then optional unpriced block
+ * after separator `另外想問問以下報價同貨期` (`name × qty` only).
  * Vendor name is intentionally omitted.
  */
 export function buildWhatsAppOrderMessage(args: {
@@ -20,21 +28,45 @@ export function buildWhatsAppOrderMessage(args: {
 }): BuiltWhatsApp {
   const { shopName, lines } = args;
   const header = `你好 ${shopName.trim()} 想叫貨 最快送`;
+
+  const priced = lines.filter((line) => isPricedProduct(line.product));
+  const unpriced = lines.filter((line) => !isPricedProduct(line.product));
+
   let total = 0;
   const historyLines: WaHistoryLine[] = [];
-  const body = lines
-    .map((line) => {
-      const name = line.product.name || "Item";
-      const qty = line.quantity;
-      const subtotal = line.lineTotal;
-      total += subtotal;
-      historyLines.push({ name, qty, subtotal });
-      return `${name} × ${qty} = HKD ${subtotal.toFixed(2)}`;
-    })
-    .join("\n");
-  const footer = lines.length ? `\nTotal: HKD ${total.toFixed(2)}` : "";
+  const parts: string[] = [header];
+
+  if (priced.length) {
+    const pricedBody = priced
+      .map((line) => {
+        const name = line.product.name || "Item";
+        const qty = line.quantity;
+        const subtotal = line.lineTotal;
+        total += subtotal;
+        historyLines.push({ name, qty, subtotal });
+        return `${name} × ${qty} = HKD ${subtotal.toFixed(2)}`;
+      })
+      .join("\n");
+    parts.push(pricedBody);
+    parts.push(`Total: HKD ${total.toFixed(2)}`);
+  }
+
+  if (unpriced.length) {
+    // Always include separator before unpriced (even when there are no priced lines).
+    parts.push(UNPRICED_SEPARATOR);
+    const unpricedBody = unpriced
+      .map((line) => {
+        const name = line.product.name || "Item";
+        const qty = line.quantity;
+        historyLines.push({ name, qty, subtotal: 0 });
+        return `${name} × ${qty}`;
+      })
+      .join("\n");
+    parts.push(unpricedBody);
+  }
+
   return {
-    text: `${header}\n${body}${footer}`,
+    text: parts.join("\n"),
     lines: historyLines,
     total,
   };

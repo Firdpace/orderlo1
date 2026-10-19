@@ -11,11 +11,15 @@ import {
   type Shop,
 } from "../lib/shops";
 import {
+  deleteWaHistoryEntry,
   listWaHistoryForUser,
   saveWaHistoryEntry,
   type WaHistoryEntry,
 } from "../lib/waHistory";
-import { buildWhatsAppOrderMessage } from "../lib/whatsapp";
+import {
+  buildWhatsAppOrderMessage,
+  isPricedProduct,
+} from "../lib/whatsapp";
 
 async function copyText(message: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
@@ -167,8 +171,8 @@ export function CartsPage() {
       <div className="page page-pad empty-state">
         <h1>購物車</h1>
         <p>
-          未有供應商購物車。請先揀貨類或供應商落單，達 MOQ
-          後再複製訊息用 WhatsApp 確認。
+          未有供應商購物車。請先揀貨類或供應商落單，再複製訊息用 WhatsApp
+          確認（未達 MOQ 亦可複製）。
         </p>
         <Link to="/" className="btn btn-primary">
           開始選購
@@ -223,9 +227,15 @@ export function CartsPage() {
     }
   };
 
-  const beginCopy = (vendorId: string) => {
+  const beginCopy = (vendorId: string, moqMet: boolean) => {
     setCopyError(null);
     if (!user) return;
+    if (
+      !moqMet &&
+      !window.confirm("未達最低訂購量（MOQ），仍要複製訊息？")
+    ) {
+      return;
+    }
     const currentShops = listShopsForUser(user.id);
     setShops(currentShops);
     if (currentShops.length === 0) {
@@ -276,7 +286,7 @@ export function CartsPage() {
         <h1>購物車</h1>
         <p>
           {vendorCount > 0
-            ? `${vendorCount} 家供應商 · 達 MOQ 後複製 WhatsApp 訊息；會自動儲存最近 2 次落單訊息。`
+            ? `${vendorCount} 家供應商 · 可複製 WhatsApp 訊息（未達 MOQ 會先提醒）；會自動儲存最近 2 次落單訊息。`
             : "暫無進行中購物車；可重看下方 WhatsApp 紀錄。"}
         </p>
       </header>
@@ -438,6 +448,7 @@ export function CartsPage() {
                     {lines.map(({ product, quantity: qty, lineTotal }) => {
                       const orderUnit =
                         product.orderUnit || product.unit || product.size || "";
+                      const priced = isPricedProduct(product);
                       return (
                         <li key={product.id} className="cart-line-row">
                           <div className="cart-line-copy">
@@ -453,13 +464,14 @@ export function CartsPage() {
                               ) : null}
                             </Link>
                             <span className="cart-line-unitprice">
-                              {formatPrice(product.price)}
-                              {orderUnit ? ` each` : ""}
+                              {priced
+                                ? `${formatPrice(product.price)}${orderUnit ? " each" : ""}`
+                                : "查報價"}
                             </span>
                           </div>
                           <div className="cart-line-right">
                             <p className="cart-line-subtotal">
-                              {formatPrice(lineTotal)}
+                              {priced ? formatPrice(lineTotal) : "查報價"}
                             </p>
                             <QtyInput
                               value={qty}
@@ -482,43 +494,43 @@ export function CartsPage() {
                   <div className="cart-drawer-actions">
                     <p className="subtotal">
                       小計 <strong>{formatPrice(subtotal)}</strong>
+                      {lines.some((l) => !isPricedProduct(l.product)) ? (
+                        <span className="meta"> （已標價項目；查報價不計入）</span>
+                      ) : null}
                     </p>
-                    {progress.met ? (
-                      <>
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-block"
-                          onClick={() => beginCopy(cart.vendorId)}
-                        >
-                          {copied ? "已複製並儲存" : "複製 WhatsApp 訊息"}
-                        </button>
-                        {copied && messagePreview ? (
-                          <div className="wa-copy-panel">
-                            <p className="meta">
-                              已複製並儲存。請自行開啟 WhatsApp 貼上傳送。
-                            </p>
-                            <textarea
-                              className="wa-copy-text"
-                              readOnly
-                              rows={8}
-                              value={messagePreview}
-                              onFocus={(e) => e.currentTarget.select()}
-                            />
-                          </div>
-                        ) : null}
-                        {copyError && copiedId === cart.vendorId ? (
-                          <p className="meta">{copyError}</p>
-                        ) : null}
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-block"
-                        disabled
-                      >
-                        未達 MOQ，未能確認
-                      </button>
-                    )}
+                    {!progress.met ? (
+                      <p className="meta moq-copy-hint" role="status">
+                        尚未達最低訂購量（MOQ），仍可複製訊息。
+                      </p>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-block"
+                      onClick={() => beginCopy(cart.vendorId, progress.met)}
+                    >
+                      {copied
+                        ? "已複製並儲存"
+                        : progress.met
+                          ? "複製 WhatsApp 訊息"
+                          : "未達 MOQ · 仍要複製訊息"}
+                    </button>
+                    {copied && messagePreview ? (
+                      <div className="wa-copy-panel">
+                        <p className="meta">
+                          已複製並儲存。請自行開啟 WhatsApp 貼上傳送。
+                        </p>
+                        <textarea
+                          className="wa-copy-text"
+                          readOnly
+                          rows={8}
+                          value={messagePreview}
+                          onFocus={(e) => e.currentTarget.select()}
+                        />
+                      </div>
+                    ) : null}
+                    {copyError && copiedId === cart.vendorId ? (
+                      <p className="meta">{copyError}</p>
+                    ) : null}
                     <button
                       type="button"
                       className="btn btn-ghost btn-block"
@@ -545,17 +557,39 @@ export function CartsPage() {
           <ul className="wa-history-list">
             {history.map((entry) => (
               <li key={entry.id} className="wa-history-card">
+                <button
+                  type="button"
+                  className="wa-history-delete"
+                  aria-label="刪除紀錄"
+                  title="刪除紀錄"
+                  onClick={() => {
+                    if (!user) return;
+                    deleteWaHistoryEntry({
+                      userId: user.id,
+                      vendorId: entry.vendorId,
+                      entryId: entry.id,
+                    });
+                    if (historyCopiedId === entry.id) setHistoryCopiedId(null);
+                    reloadHistory();
+                  }}
+                >
+                  ×
+                </button>
                 <div className="wa-history-head">
                   <strong>{entry.vendorName}</strong>
                   <span className="meta">
-                    {new Date(entry.createdAt).toLocaleString()} · HKD{" "}
-                    {entry.total.toFixed(2)}
+                    {new Date(entry.createdAt).toLocaleString()}
+                    {entry.total > 0
+                      ? ` · HKD ${entry.total.toFixed(2)}`
+                      : ""}
                   </span>
                 </div>
                 <ul className="wa-history-lines">
                   {entry.lines.map((line, i) => (
                     <li key={`${entry.id}-${i}`}>
-                      {line.name} × {line.qty} = HKD {line.subtotal.toFixed(2)}
+                      {line.subtotal > 0
+                        ? `${line.name} × ${line.qty} = HKD ${line.subtotal.toFixed(2)}`
+                        : `${line.name} × ${line.qty}`}
                     </li>
                   ))}
                 </ul>

@@ -24,7 +24,6 @@ export function ProductPage() {
   }
 
   const onAdd = () => {
-    if (!(product.price > 0)) return;
     addItem(product.id);
     setAdded(true);
     setFlashed(true);
@@ -39,7 +38,7 @@ export function ProductPage() {
     product.unitPrice != null && product.unitPrice > 0
       ? `${formatPrice(product.unitPrice)}${product.unitPriceLabel || ""}`
       : "";
-  const canAdd = product.price > 0;
+  const hasPrice = product.price > 0;
 
   return (
     <div className="page">
@@ -75,7 +74,7 @@ export function ProductPage() {
           ) : null}
           <li>
             <span>價錢（每訂貨單位）</span>
-            <strong>{canAdd ? formatPrice(product.price) : "查詢報價"}</strong>
+            <strong>{hasPrice ? formatPrice(product.price) : "查詢報價"}</strong>
           </li>
           {unitPrice ? (
             <li>
@@ -113,25 +112,15 @@ export function ProductPage() {
               <path d="M7 21h10" />
             </svg>
           </Link>
-          {canAdd ? (
-            <button
-              type="button"
-              className={`btn btn-icon btn-add btn-add-lg ${flashed ? "btn-add-flash" : ""}`}
-              onClick={onAdd}
-              aria-label={added ? `已加入 ${vendor.name}` : "加入購物車"}
-              title="加入"
-            >
-              {added ? "✓" : "+"}
-            </button>
-          ) : (
-            <span
-              className="btn btn-icon btn-ask btn-add-lg"
-              title="查詢報價"
-              aria-label="查詢報價（無標價）"
-            >
-              查詢
-            </span>
-          )}
+          <button
+            type="button"
+            className={`btn btn-icon btn-add btn-add-lg ${flashed ? "btn-add-flash" : ""}`}
+            onClick={onAdd}
+            aria-label={added ? `已加入 ${vendor.name}` : "加入購物車"}
+            title="加入"
+          >
+            {added ? "✓" : "+"}
+          </button>
         </div>
         <Link to="/carts" className="text-link">
           查看購物車 / WhatsApp 確認

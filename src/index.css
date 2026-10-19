@@ -1561,13 +1561,40 @@ textarea {
 }
 
 .wa-history-card {
+  position: relative;
   padding: 14px;
+  padding-top: 16px;
+  padding-right: 40px;
   border-radius: var(--radius);
   border: 1px solid var(--mist);
   background: color-mix(in srgb, white 70%, var(--bone));
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.wa-history-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted, #6b7280);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wa-history-delete:hover,
+.wa-history-delete:focus-visible {
+  background: color-mix(in srgb, var(--charcoal) 8%, transparent);
+  color: var(--charcoal);
+  outline: none;
 }
 
 .wa-history-head {
