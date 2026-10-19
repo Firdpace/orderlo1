@@ -1,11 +1,15 @@
 import { Link } from "react-router-dom";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { formatMoq, formatPrice } from "../data/seed";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { useCatalog } from "../context/CatalogContext";
 import { moqProgress } from "../lib/moq";
-import { listShopsForUser, type Shop } from "../lib/shops";
+import {
+  addShop,
+  listShopsForUser,
+  type Shop,
+} from "../lib/shops";
 import {
   listWaHistoryForUser,
   saveWaHistoryEntry,
@@ -104,6 +108,11 @@ export function CartsPage() {
   const [historyCopiedId, setHistoryCopiedId] = useState<string | null>(null);
   const [shops, setShops] = useState<Shop[]>([]);
   const [pickerVendorId, setPickerVendorId] = useState<string | null>(null);
+  const [addShopVendorId, setAddShopVendorId] = useState<string | null>(null);
+  const [newShopName, setNewShopName] = useState("");
+  const [newShopAddress, setNewShopAddress] = useState("");
+  const [addShopError, setAddShopError] = useState<string | null>(null);
+  const [copiedToast, setCopiedToast] = useState(false);
   const [lastMessage, setLastMessage] = useState<{
     vendorId: string;
     text: string;
@@ -115,7 +124,12 @@ export function CartsPage() {
       return;
     }
     setShops(listShopsForUser(user.id));
-  }, [user, pickerVendorId, copiedId]);
+  }, [user, pickerVendorId, addShopVendorId, copiedId]);
+
+  const showCopiedFeedback = useCallback(() => {
+    setCopiedToast(true);
+    window.setTimeout(() => setCopiedToast(false), 2000);
+  }, []);
 
   const history =
     user && historyTick >= 0
@@ -163,21 +177,15 @@ export function CartsPage() {
     );
   }
 
-  const beginCopy = (vendorId: string) => {
-    setCopyError(null);
-    if (!user) return;
-    const currentShops = listShopsForUser(user.id);
-    setShops(currentShops);
-    if (currentShops.length === 0) {
-      setCopyError("請先在個人資料新增店舖，再複製落單訊息。");
-      setCopiedId(vendorId);
-      return;
-    }
-    setPickerVendorId(vendorId);
+  const closeAddShopSheet = () => {
+    setAddShopVendorId(null);
+    setNewShopName("");
+    setNewShopAddress("");
+    setAddShopError(null);
   };
 
-  const confirmCopyWithShop = async (shop: Shop) => {
-    const vendorId = pickerVendorId;
+  const confirmCopyWithShop = async (shop: Shop, vendorIdOverride?: string) => {
+    const vendorId = vendorIdOverride ?? pickerVendorId;
     if (!vendorId) return;
     const vendor = getVendor(vendorId);
     if (!vendor) return;
@@ -190,6 +198,7 @@ export function CartsPage() {
       subtotal,
     });
     setPickerVendorId(null);
+    setAddShopVendorId(null);
     setCopyError(null);
     try {
       await copyText(built.text);
@@ -202,6 +211,7 @@ export function CartsPage() {
       });
       setLastMessage({ vendorId, text: built.text });
       setCopiedId(vendorId);
+      showCopiedFeedback();
       window.setTimeout(
         () => setCopiedId((id) => (id === vendorId ? null : id)),
         2200,
@@ -213,7 +223,52 @@ export function CartsPage() {
     }
   };
 
+  const beginCopy = (vendorId: string) => {
+    setCopyError(null);
+    if (!user) return;
+    const currentShops = listShopsForUser(user.id);
+    setShops(currentShops);
+    if (currentShops.length === 0) {
+      setNewShopName("");
+      setNewShopAddress("");
+      setAddShopError(null);
+      setAddShopVendorId(vendorId);
+      return;
+    }
+    if (currentShops.length === 1) {
+      void confirmCopyWithShop(currentShops[0], vendorId);
+      return;
+    }
+    setPickerVendorId(vendorId);
+  };
+
+  const saveNewShopAndCopy = (e: FormEvent) => {
+    e.preventDefault();
+    if (!user || !addShopVendorId) return;
+    setAddShopError(null);
+    try {
+      const updated = addShop(user.id, {
+        name: newShopName,
+        deliveryAddress: newShopAddress,
+      });
+      const created = updated[updated.length - 1];
+      if (!created) {
+        setAddShopError("新增店舖失敗，請再試。");
+        return;
+      }
+      setShops(updated);
+      const vendorId = addShopVendorId;
+      closeAddShopSheet();
+      void confirmCopyWithShop(created, vendorId);
+    } catch (err) {
+      setAddShopError(
+        err instanceof Error ? err.message : "新增店舖失敗，請再試。",
+      );
+    }
+  };
+
   const pickerVendor = pickerVendorId ? getVendor(pickerVendorId) : null;
+  const addShopVendor = addShopVendorId ? getVendor(addShopVendorId) : null;
 
   return (
     <div className="page page-pad">
@@ -225,6 +280,62 @@ export function CartsPage() {
             : "暫無進行中購物車；可重看下方 WhatsApp 紀錄。"}
         </p>
       </header>
+
+      {copiedToast ? (
+        <div className="wa-copied-toast" role="status" aria-live="polite">
+          已複製訊息
+        </div>
+      ) : null}
+
+      {addShopVendorId && addShopVendor ? (
+        <div
+          className="shop-picker-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-shop-title"
+        >
+          <div className="shop-picker-sheet">
+            <h2 id="add-shop-title">新增店舖</h2>
+            <p className="meta">
+              複製給 {addShopVendor.name}{" "}
+              的落單訊息前，請先新增一間店舖（名稱同送貨地址）。
+            </p>
+            <form className="checkout-form shop-picker-form" onSubmit={saveNewShopAndCopy}>
+              <label>
+                店舖名稱
+                <input
+                  value={newShopName}
+                  onChange={(e) => setNewShopName(e.target.value)}
+                  placeholder="例如：旺角分店"
+                  required
+                  autoFocus
+                />
+              </label>
+              <label>
+                送貨地址
+                <textarea
+                  value={newShopAddress}
+                  onChange={(e) => setNewShopAddress(e.target.value)}
+                  placeholder="完整送貨地址"
+                  rows={3}
+                  required
+                />
+              </label>
+              {addShopError ? <p className="form-error">{addShopError}</p> : null}
+              <button type="submit" className="btn btn-primary btn-block">
+                儲存並複製訊息
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-block"
+                onClick={closeAddShopSheet}
+              >
+                取消
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       {pickerVendorId && pickerVendor ? (
         <div
@@ -396,14 +507,7 @@ export function CartsPage() {
                           </div>
                         ) : null}
                         {copyError && copiedId === cart.vendorId ? (
-                          <p className="meta">
-                            {copyError}{" "}
-                            {copyError.includes("個人資料") ? (
-                              <Link to="/profile" className="text-link">
-                                前往個人資料
-                              </Link>
-                            ) : null}
-                          </p>
+                          <p className="meta">{copyError}</p>
                         ) : null}
                       </>
                     ) : (
@@ -461,6 +565,7 @@ export function CartsPage() {
                   onClick={() => {
                     void copyText(entry.messageText).then(() => {
                       setHistoryCopiedId(entry.id);
+                      showCopiedFeedback();
                       window.setTimeout(
                         () =>
                           setHistoryCopiedId((id) =>

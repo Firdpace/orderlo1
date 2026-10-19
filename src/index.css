@@ -1693,6 +1693,24 @@ textarea {
   font-size: 1rem;
 }
 
+.wa-copied-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabbar-h) + 20px + env(safe-area-inset-bottom));
+  z-index: 90;
+  transform: translateX(-50%);
+  padding: 12px 20px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 92%, var(--olive));
+  color: var(--bone);
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--ink) 28%, transparent);
+  animation: cart-toast-in 220ms ease both;
+  pointer-events: none;
+}
+
 .shop-picker-overlay {
   position: fixed;
   inset: 0;
@@ -1701,6 +1719,12 @@ textarea {
   display: grid;
   align-items: end;
   padding: 16px;
+}
+
+.shop-picker-form {
+  display: grid;
+  gap: 10px;
+  margin: 0;
 }
 
 .shop-picker-sheet {
