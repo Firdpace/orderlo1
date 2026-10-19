@@ -1,22 +1,32 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { formatMoq } from "../data/seed";
 import { useAuth } from "../context/AuthContext";
 import { useCatalog } from "../context/CatalogContext";
+import { displayPhone, type LocalUser } from "../lib/auth";
+import { isValidPin } from "../lib/pin";
 
 export function AdminLoginPage() {
-  const { isAdmin, login } = useAuth();
+  const { adminUnlocked, unlockAdmin } = useAuth();
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  if (isAdmin) return <Navigate to="/admin" replace />;
+  if (adminUnlocked) return <Navigate to="/admin" replace />;
 
-  const onSubmit = (event: FormEvent) => {
+  const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (login(pin)) {
-      setError("");
-    } else {
-      setError("Incorrect admin PIN.");
+    setBusy(true);
+    setError("");
+    try {
+      if (!isValidPin(pin.trim())) {
+        setError("請輸入 4 位數字 PIN。");
+        return;
+      }
+      const ok = await unlockAdmin(pin.trim());
+      if (!ok) setError("Admin PIN 不正確。");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -24,7 +34,7 @@ export function AdminLoginPage() {
     <div className="page page-pad">
       <header className="page-header">
         <h1>管理員</h1>
-        <p>上載供應商報價，會覆蓋該供應商舊版產品表。</p>
+        <p>輸入網站 Admin PIN 以管理報價、用戶同設定。</p>
       </header>
       <form className="checkout-form" onSubmit={onSubmit}>
         <label>
@@ -33,14 +43,21 @@ export function AdminLoginPage() {
             type="password"
             inputMode="numeric"
             value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            placeholder="Default demo PIN: 2468"
+            onChange={(e) =>
+              setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+            }
+            placeholder="預設：1234"
+            maxLength={4}
             required
           />
         </label>
         {error && <p className="form-error">{error}</p>}
-        <button type="submit" className="btn btn-primary btn-block">
-          Sign in
+        <button
+          type="submit"
+          className="btn btn-primary btn-block"
+          disabled={busy}
+        >
+          {busy ? "驗證中…" : "解鎖管理員"}
         </button>
       </form>
     </div>
@@ -48,7 +65,14 @@ export function AdminLoginPage() {
 }
 
 export function AdminPage() {
-  const { isAdmin, logout, changePin } = useAuth();
+  const {
+    adminUnlocked,
+    lockAdmin,
+    changePin,
+    user: me,
+    refreshUsers,
+    setUserEnabled,
+  } = useAuth();
   const {
     vendors,
     quotations,
@@ -64,7 +88,12 @@ export function AdminPage() {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [phone, setPhone] = useState(salesWhatsapp);
-  const [pinForm, setPinForm] = useState({ current: "", next: "" });
+  const [pinForm, setPinForm] = useState({
+    current: "",
+    next: "",
+    confirm: "",
+  });
+  const [users, setUsers] = useState<LocalUser[]>([]);
 
   const selectedVendor = useMemo(
     () => vendors.find((v) => v.id === vendorId),
@@ -72,7 +101,12 @@ export function AdminPage() {
   );
   const quote = quotations.find((q) => q.vendorId === vendorId);
 
-  if (!isAdmin) return <Navigate to="/admin/login" replace />;
+  useEffect(() => {
+    if (!adminUnlocked) return;
+    void refreshUsers().then(setUsers);
+  }, [adminUnlocked, refreshUsers]);
+
+  if (!adminUnlocked) return <Navigate to="/admin/login" replace />;
 
   const onUpload = async (file: File | null) => {
     if (!file || !vendorId) return;
@@ -100,7 +134,8 @@ export function AdminPage() {
       <section className="admin-card">
         <h2>業務 WhatsApp</h2>
         <p className="meta">
-          確認掣會開 WhatsApp，帶貨號、名稱、數量、價錢。
+          落單訊息只含品名、數量同小計（HKD）。複製或開啟 WhatsApp
+          時會儲存最近紀錄。
         </p>
         <form
           className="checkout-form"
@@ -115,7 +150,7 @@ export function AdminPage() {
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="60123456789"
+              placeholder="85291234567"
               required
             />
           </label>
@@ -219,24 +254,94 @@ export function AdminPage() {
       </section>
 
       <section className="admin-card">
+        <h2>管理用戶</h2>
+        <p className="meta">
+          啟用或停用帳戶。首個註冊用戶為管理員。停用後無法登入。
+        </p>
+        {users.length === 0 ? (
+          <p className="meta">未有註冊用戶。</p>
+        ) : (
+          <ul className="user-admin-list">
+            {users.map((u) => (
+              <li key={u.id} className="user-admin-row">
+                <div>
+                  <strong>{displayPhone(u.phoneE164)}</strong>
+                  <span className="meta">
+                    {u.isAdmin ? "Admin · " : ""}
+                    {u.enabled ? "已啟用" : "已停用"}
+                    {me?.id === u.id ? " · 你" : ""}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className={`btn ${u.enabled ? "btn-ghost" : "btn-secondary"}`}
+                  disabled={me?.id === u.id}
+                  onClick={() => {
+                    void (async () => {
+                      const next = await setUserEnabled(u.id, !u.enabled);
+                      setUsers(next);
+                      setStatus(
+                        u.enabled
+                          ? `已停用 ${displayPhone(u.phoneE164)}`
+                          : `已啟用 ${displayPhone(u.phoneE164)}`,
+                      );
+                    })();
+                  }}
+                >
+                  {u.enabled ? "停用" : "啟用"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <button
+          type="button"
+          className="btn btn-ghost btn-block"
+          onClick={() => {
+            void refreshUsers().then((list) => {
+              setUsers(list);
+              setStatus("用戶列表已更新。");
+            });
+          }}
+        >
+          重新整理用戶
+        </button>
+      </section>
+
+      <section className="admin-card">
         <h2>Security</h2>
         <form
           className="checkout-form"
           onSubmit={(e) => {
             e.preventDefault();
-            const ok = changePin(pinForm.current, pinForm.next);
-            setStatus(ok ? "Admin PIN updated." : "Could not change PIN.");
-            if (ok) setPinForm({ current: "", next: "" });
+            void (async () => {
+              if (pinForm.next !== pinForm.confirm) {
+                setStatus("新 PIN 兩次輸入唔一致。");
+                return;
+              }
+              if (!isValidPin(pinForm.next)) {
+                setStatus("新 PIN 必須為 4 位數字。");
+                return;
+              }
+              const ok = await changePin(pinForm.current, pinForm.next);
+              setStatus(ok ? "Admin PIN 已更新。" : "無法更改 PIN。");
+              if (ok) setPinForm({ current: "", next: "", confirm: "" });
+            })();
           }}
         >
           <label>
             Current PIN
             <input
               type="password"
+              inputMode="numeric"
               value={pinForm.current}
               onChange={(e) =>
-                setPinForm((s) => ({ ...s, current: e.target.value }))
+                setPinForm((s) => ({
+                  ...s,
+                  current: e.target.value.replace(/\D/g, "").slice(0, 4),
+                }))
               }
+              maxLength={4}
               required
             />
           </label>
@@ -244,11 +349,31 @@ export function AdminPage() {
             New PIN
             <input
               type="password"
+              inputMode="numeric"
               value={pinForm.next}
               onChange={(e) =>
-                setPinForm((s) => ({ ...s, next: e.target.value }))
+                setPinForm((s) => ({
+                  ...s,
+                  next: e.target.value.replace(/\D/g, "").slice(0, 4),
+                }))
               }
-              minLength={4}
+              maxLength={4}
+              required
+            />
+          </label>
+          <label>
+            Confirm new PIN
+            <input
+              type="password"
+              inputMode="numeric"
+              value={pinForm.confirm}
+              onChange={(e) =>
+                setPinForm((s) => ({
+                  ...s,
+                  confirm: e.target.value.replace(/\D/g, "").slice(0, 4),
+                }))
+              }
+              maxLength={4}
               required
             />
           </label>
@@ -256,8 +381,12 @@ export function AdminPage() {
             Change PIN
           </button>
         </form>
-        <button type="button" className="btn btn-ghost btn-block" onClick={logout}>
-          Sign out
+        <button
+          type="button"
+          className="btn btn-ghost btn-block"
+          onClick={lockAdmin}
+        >
+          鎖定管理員（需再輸入 PIN）
         </button>
         <button
           type="button"

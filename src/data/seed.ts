@@ -16,5 +16,5 @@ export function formatMoq(moq: MoqRule) {
   return `MOQ ${moq.value} pcs`;
 }
 
-/** Demo admin PIN — change after first login in Admin → Settings. */
-export const DEFAULT_ADMIN_PIN = "2468";
+/** Site admin PIN default — change in Admin → Security. */
+export const DEFAULT_ADMIN_PIN = "1234";

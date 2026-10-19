@@ -1,11 +1,12 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
+import { displayPhone } from "../lib/auth";
 import { CartToast } from "./CartToast";
 
 export function Layout() {
   const { itemCount, vendorCount } = useCart();
-  const { isAdmin } = useAuth();
+  const { adminUnlocked, user, logout } = useAuth();
   const location = useLocation();
   const hideTabbar = location.pathname.startsWith("/admin");
 
@@ -16,9 +17,20 @@ export function Layout() {
           Orderlo
         </NavLink>
         <div className="topbar-actions">
-          <NavLink to={isAdmin ? "/admin" : "/admin/login"} className="admin-chip">
+          {user ? (
+            <span className="user-chip" title={user.phoneE164}>
+              {displayPhone(user.phoneE164)}
+            </span>
+          ) : null}
+          <NavLink
+            to={adminUnlocked ? "/admin" : "/admin/login"}
+            className="admin-chip"
+          >
             Admin
           </NavLink>
+          <button type="button" className="logout-chip" onClick={logout}>
+            登出
+          </button>
           <NavLink to="/carts" className="cart-chip" aria-label="Open carts">
             <span className="cart-chip-label">購物車</span>
             <span className="cart-chip-meta">
