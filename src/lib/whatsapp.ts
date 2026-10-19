@@ -16,9 +16,9 @@ const UNPRICED_SEPARATOR = "另外想問問以下報價同貨期";
 
 /**
  * WhatsApp order text: shop greeting header, then priced lines
- * (`name × qty = HKD subtotal` + Total), then optional unpriced block
- * after separator `另外想問問以下報價同貨期` (`name × qty` only).
- * Vendor name is intentionally omitted.
+ * (`• name × qty = HKD subtotal` + Total), then optional unpriced block
+ * after separator `另外想問問以下報價同貨期` (`• name × qty` only).
+ * Header, separator, and Total stay non-bulleted. Vendor name omitted.
  */
 export function buildWhatsAppOrderMessage(args: {
   vendor: Vendor;
@@ -44,7 +44,7 @@ export function buildWhatsAppOrderMessage(args: {
         const subtotal = line.lineTotal;
         total += subtotal;
         historyLines.push({ name, qty, subtotal });
-        return `${name} × ${qty} = HKD ${subtotal.toFixed(2)}`;
+        return `• ${name} × ${qty} = HKD ${subtotal.toFixed(2)}`;
       })
       .join("\n");
     parts.push(pricedBody);
@@ -59,7 +59,7 @@ export function buildWhatsAppOrderMessage(args: {
         const name = line.product.name || "Item";
         const qty = line.quantity;
         historyLines.push({ name, qty, subtotal: 0 });
-        return `${name} × ${qty}`;
+        return `• ${name} × ${qty}`;
       })
       .join("\n");
     parts.push(unpricedBody);
