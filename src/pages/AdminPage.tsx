@@ -52,7 +52,6 @@ export function AdminLoginPage() {
             onChange={(e) =>
               setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
             }
-            placeholder="預設：1234"
             maxLength={4}
             required
           />
