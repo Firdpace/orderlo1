@@ -1,22 +1,44 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { formatMoq } from "../data/seed";
 import { useAuth } from "../context/AuthContext";
 import { useCatalog } from "../context/CatalogContext";
+import {
+  displayPhone,
+  statusLabel,
+  type LocalUser,
+  type UserStatus,
+} from "../lib/auth";
+import {
+  listSessionsForUser,
+  readDeviceSessionId,
+  revokeSession,
+  type CloudSession,
+} from "../lib/cloudSessions";
+import { isValidPin } from "../lib/pin";
 
 export function AdminLoginPage() {
-  const { isAdmin, login } = useAuth();
+  const { user, adminUnlocked, unlockAdmin } = useAuth();
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  if (isAdmin) return <Navigate to="/admin" replace />;
+  if (!user?.isAdmin) return <Navigate to="/" replace />;
+  if (adminUnlocked) return <Navigate to="/admin" replace />;
 
-  const onSubmit = (event: FormEvent) => {
+  const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (login(pin)) {
-      setError("");
-    } else {
-      setError("Incorrect admin PIN.");
+    setBusy(true);
+    setError("");
+    try {
+      if (!isValidPin(pin.trim())) {
+        setError("請輸入 4 位數字 PIN。");
+        return;
+      }
+      const ok = await unlockAdmin(pin.trim());
+      if (!ok) setError("Admin PIN 不正確。");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -24,7 +46,7 @@ export function AdminLoginPage() {
     <div className="page page-pad">
       <header className="page-header">
         <h1>管理員</h1>
-        <p>上載供應商報價，會覆蓋該供應商舊版產品表。</p>
+        <p>輸入網站 Admin PIN 以管理報價、用戶同設定。</p>
       </header>
       <form className="checkout-form" onSubmit={onSubmit}>
         <label>
@@ -33,22 +55,50 @@ export function AdminLoginPage() {
             type="password"
             inputMode="numeric"
             value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            placeholder="Default demo PIN: 2468"
+            onChange={(e) =>
+              setPin(e.target.value.replace(/\D/g, "").slice(0, 4))
+            }
+            maxLength={4}
             required
           />
         </label>
         {error && <p className="form-error">{error}</p>}
-        <button type="submit" className="btn btn-primary btn-block">
-          Sign in
+        <button
+          type="submit"
+          className="btn btn-primary btn-block"
+          disabled={busy}
+        >
+          {busy ? "驗證中…" : "解鎖管理員"}
         </button>
       </form>
     </div>
   );
 }
 
+function formatTs(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("zh-HK", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export function AdminPage() {
-  const { isAdmin, logout, changePin } = useAuth();
+  const {
+    adminUnlocked,
+    lockAdmin,
+    changePin,
+    user: me,
+    refreshUsers,
+    setUserStatus,
+    cloudAuthConfigured,
+    logout,
+  } = useAuth();
   const {
     vendors,
     quotations,
@@ -64,7 +114,18 @@ export function AdminPage() {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [phone, setPhone] = useState(salesWhatsapp);
-  const [pinForm, setPinForm] = useState({ current: "", next: "" });
+  const [pinForm, setPinForm] = useState({
+    current: "",
+    next: "",
+    confirm: "",
+  });
+  const [users, setUsers] = useState<LocalUser[]>([]);
+  const [sessionsOpenFor, setSessionsOpenFor] = useState<string | null>(null);
+  const [sessionsByUser, setSessionsByUser] = useState<
+    Record<string, CloudSession[]>
+  >({});
+  const [sessionsBusy, setSessionsBusy] = useState(false);
+  const myDeviceSessionId = readDeviceSessionId();
 
   const selectedVendor = useMemo(
     () => vendors.find((v) => v.id === vendorId),
@@ -72,7 +133,13 @@ export function AdminPage() {
   );
   const quote = quotations.find((q) => q.vendorId === vendorId);
 
-  if (!isAdmin) return <Navigate to="/admin/login" replace />;
+  useEffect(() => {
+    if (!adminUnlocked || !me?.isAdmin) return;
+    void refreshUsers().then(setUsers);
+  }, [adminUnlocked, me?.isAdmin, refreshUsers]);
+
+  if (!me?.isAdmin) return <Navigate to="/" replace />;
+  if (!adminUnlocked) return <Navigate to="/admin/login" replace />;
 
   const onUpload = async (file: File | null) => {
     if (!file || !vendorId) return;
@@ -90,6 +157,60 @@ export function AdminPage() {
     }
   };
 
+  const applyStatus = async (u: LocalUser, next: UserStatus) => {
+    const list = await setUserStatus(u.id, next);
+    setUsers(list);
+    setStatus(`${displayPhone(u.phoneE164)} → ${statusLabel(next)}`);
+  };
+
+  const loadSessions = async (userId: string) => {
+    if (!cloudAuthConfigured) return;
+    setSessionsBusy(true);
+    try {
+      const list = await listSessionsForUser(userId);
+      setSessionsByUser((prev) => ({ ...prev, [userId]: list }));
+    } finally {
+      setSessionsBusy(false);
+    }
+  };
+
+  const toggleSessions = (userId: string) => {
+    if (sessionsOpenFor === userId) {
+      setSessionsOpenFor(null);
+      return;
+    }
+    setSessionsOpenFor(userId);
+    void loadSessions(userId);
+  };
+
+  const onRevoke = async (userId: string, session: CloudSession) => {
+    const isSelfCurrent =
+      session.id === myDeviceSessionId && userId === me?.id;
+    if (
+      !confirm(
+        isSelfCurrent
+          ? "撤銷這個裝置的登入？你會被登出。"
+          : "撤銷此登入工作階段？該裝置下次開啟 App 時會被登出。",
+      )
+    ) {
+      return;
+    }
+    setSessionsBusy(true);
+    try {
+      await revokeSession(session.id);
+      if (isSelfCurrent) {
+        logout();
+        return;
+      }
+      await loadSessions(userId);
+      setStatus("已撤銷登入工作階段。");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "撤銷失敗。");
+    } finally {
+      setSessionsBusy(false);
+    }
+  };
+
   return (
     <div className="page page-pad">
       <header className="page-header">
@@ -100,7 +221,7 @@ export function AdminPage() {
       <section className="admin-card">
         <h2>業務 WhatsApp</h2>
         <p className="meta">
-          確認掣會開 WhatsApp，帶貨號、名稱、數量、價錢。
+          落單訊息只含店舖問候、品名、數量同小計（HKD）。複製時會儲存最近紀錄。
         </p>
         <form
           className="checkout-form"
@@ -115,7 +236,7 @@ export function AdminPage() {
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="60123456789"
+              placeholder="85291234567"
               required
             />
           </label>
@@ -219,24 +340,177 @@ export function AdminPage() {
       </section>
 
       <section className="admin-card">
+        <h2>管理用戶</h2>
+        <p className="meta">
+          新註冊為待審批。可批准啟用、停用。唯獨 +852 66169905
+          為管理員。
+          {cloudAuthConfigured
+            ? " 雲端登入已啟用 — 可查看／撤銷各裝置工作階段。"
+            : ""}
+        </p>
+        {!cloudAuthConfigured ? (
+          <p className="admin-status admin-status-warn">
+            Cloud auth not configured — set VITE_SUPABASE_URL and
+            VITE_SUPABASE_ANON_KEY on Vercel to enable multi-device sessions.
+          </p>
+        ) : null}
+        {users.length === 0 ? (
+          <p className="meta">未有註冊用戶。</p>
+        ) : (
+          <ul className="user-admin-list">
+            {users.map((u) => (
+              <li key={u.id} className="user-admin-item">
+                <div className="user-admin-row">
+                  <div>
+                    <strong>{displayPhone(u.phoneE164)}</strong>
+                    <span className="meta">
+                      {u.isAdmin ? "Admin · " : ""}
+                      {statusLabel(u.status)}
+                      {me?.id === u.id ? " · 你" : ""}
+                    </span>
+                  </div>
+                  <div className="user-admin-actions">
+                    {cloudAuthConfigured ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => toggleSessions(u.id)}
+                      >
+                        {sessionsOpenFor === u.id ? "收起 Sessions" : "Sessions"}
+                      </button>
+                    ) : null}
+                    {u.status === "pending" ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => void applyStatus(u, "enabled")}
+                      >
+                        批准
+                      </button>
+                    ) : null}
+                    {u.status !== "enabled" && u.status !== "pending" ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => void applyStatus(u, "enabled")}
+                      >
+                        啟用
+                      </button>
+                    ) : null}
+                    {u.status === "enabled" && !u.isAdmin ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={me?.id === u.id}
+                        onClick={() => void applyStatus(u, "disabled")}
+                      >
+                        停用
+                      </button>
+                    ) : null}
+                    {u.status === "pending" ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => void applyStatus(u, "disabled")}
+                      >
+                        拒絕
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                {sessionsOpenFor === u.id ? (
+                  <div className="session-panel">
+                    {sessionsBusy && !sessionsByUser[u.id] ? (
+                      <p className="meta">載入 Sessions…</p>
+                    ) : (sessionsByUser[u.id] ?? []).length === 0 ? (
+                      <p className="meta">此用戶暫無活躍登入裝置。</p>
+                    ) : (
+                      <ul className="session-list">
+                        {(sessionsByUser[u.id] ?? []).map((s) => (
+                          <li key={s.id} className="session-row">
+                            <div>
+                              <strong>{s.label || "Device"}</strong>
+                              <span className="meta">
+                                建立 {formatTs(s.createdAt)}
+                                {" · "}
+                                最後活躍 {formatTs(s.lastSeenAt)}
+                                {s.id === myDeviceSessionId ? " · 此裝置" : ""}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-ghost"
+                              disabled={sessionsBusy}
+                              onClick={() => void onRevoke(u.id, s)}
+                            >
+                              撤銷
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      disabled={sessionsBusy}
+                      onClick={() => void loadSessions(u.id)}
+                    >
+                      重新整理 Sessions
+                    </button>
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+        <button
+          type="button"
+          className="btn btn-ghost btn-block"
+          onClick={() => {
+            void refreshUsers().then((list) => {
+              setUsers(list);
+              setStatus("用戶列表已更新。");
+            });
+          }}
+        >
+          重新整理用戶
+        </button>
+      </section>
+
+      <section className="admin-card">
         <h2>Security</h2>
         <form
           className="checkout-form"
           onSubmit={(e) => {
             e.preventDefault();
-            const ok = changePin(pinForm.current, pinForm.next);
-            setStatus(ok ? "Admin PIN updated." : "Could not change PIN.");
-            if (ok) setPinForm({ current: "", next: "" });
+            void (async () => {
+              if (pinForm.next !== pinForm.confirm) {
+                setStatus("新 PIN 兩次輸入唔一致。");
+                return;
+              }
+              if (!isValidPin(pinForm.next)) {
+                setStatus("新 PIN 必須為 4 位數字。");
+                return;
+              }
+              const ok = await changePin(pinForm.current, pinForm.next);
+              setStatus(ok ? "Admin PIN 已更新。" : "無法更改 PIN。");
+              if (ok) setPinForm({ current: "", next: "", confirm: "" });
+            })();
           }}
         >
           <label>
             Current PIN
             <input
               type="password"
+              inputMode="numeric"
               value={pinForm.current}
               onChange={(e) =>
-                setPinForm((s) => ({ ...s, current: e.target.value }))
+                setPinForm((s) => ({
+                  ...s,
+                  current: e.target.value.replace(/\D/g, "").slice(0, 4),
+                }))
               }
+              maxLength={4}
               required
             />
           </label>
@@ -244,11 +518,31 @@ export function AdminPage() {
             New PIN
             <input
               type="password"
+              inputMode="numeric"
               value={pinForm.next}
               onChange={(e) =>
-                setPinForm((s) => ({ ...s, next: e.target.value }))
+                setPinForm((s) => ({
+                  ...s,
+                  next: e.target.value.replace(/\D/g, "").slice(0, 4),
+                }))
               }
-              minLength={4}
+              maxLength={4}
+              required
+            />
+          </label>
+          <label>
+            Confirm new PIN
+            <input
+              type="password"
+              inputMode="numeric"
+              value={pinForm.confirm}
+              onChange={(e) =>
+                setPinForm((s) => ({
+                  ...s,
+                  confirm: e.target.value.replace(/\D/g, "").slice(0, 4),
+                }))
+              }
+              maxLength={4}
               required
             />
           </label>
@@ -256,8 +550,12 @@ export function AdminPage() {
             Change PIN
           </button>
         </form>
-        <button type="button" className="btn btn-ghost btn-block" onClick={logout}>
-          Sign out
+        <button
+          type="button"
+          className="btn btn-ghost btn-block"
+          onClick={lockAdmin}
+        >
+          鎖定管理員（需再輸入 PIN）
         </button>
         <button
           type="button"

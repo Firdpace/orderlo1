@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useDeferredValue, useMemo, useState } from "react";
+import heroImage from "../assets/hero.jpg";
 import { formatMoq } from "../data/seed";
 import { ProductTile } from "../components/ProductTile";
 import { useCatalog } from "../context/CatalogContext";
@@ -68,15 +69,12 @@ export function Home() {
     <div className="page">
       <section className="hero">
         <div className="hero-media" aria-hidden="true">
-          <img
-            src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1400&q=80"
-            alt=""
-          />
+          <img src={heroImage} alt="" />
           <div className="hero-scrim" />
         </div>
         <div className="hero-content reveal">
           <p className="brand-mark">Orderlo</p>
-          <h1 className="hero-headline">先選貨類，或直接揀供應商。</h1>
+          <h1 className="hero-headline">格價 搵貨 落單</h1>
           <p className="hero-lede">
             {products.length.toLocaleString()} 項報價 · {vendors.length}{" "}
             家供應商 · 各家獨立購物車，達 MOQ 後 WhatsApp 確認給業務。

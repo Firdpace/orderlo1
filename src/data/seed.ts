@@ -1,7 +1,21 @@
 import imported from "./importedCatalog.json";
+import haiBaoUnagiImage from "../assets/hai-bao-unagi.jpg";
 import type { CatalogSnapshot, MoqRule } from "./types";
 
-export const SEED_CATALOG = imported as CatalogSnapshot;
+const seed = imported as CatalogSnapshot;
+
+/** Local vendor card photos that should win over remote placeholders in the seed JSON. */
+const VENDOR_IMAGE_OVERRIDES: Record<string, string> = {
+  "hai-bao": haiBaoUnagiImage,
+};
+
+export const SEED_CATALOG: CatalogSnapshot = {
+  ...seed,
+  vendors: seed.vendors.map((vendor) => {
+    const image = VENDOR_IMAGE_OVERRIDES[vendor.id];
+    return image ? { ...vendor, image } : vendor;
+  }),
+};
 
 export function formatPrice(amount: number) {
   const cents = Math.round(Number(amount) * 100);
@@ -16,5 +30,5 @@ export function formatMoq(moq: MoqRule) {
   return `MOQ ${moq.value} pcs`;
 }
 
-/** Demo admin PIN — change after first login in Admin → Settings. */
-export const DEFAULT_ADMIN_PIN = "2468";
+/** Site admin PIN default — change in Admin → Security. */
+export const DEFAULT_ADMIN_PIN = "1234";

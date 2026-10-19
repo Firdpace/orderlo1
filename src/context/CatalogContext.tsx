@@ -23,7 +23,7 @@ import {
   toPlatformCategory,
 } from "../lib/platformCategory";
 
-const STORAGE_KEY = "orderlo-catalog-v26-jfc-p1-16";
+const STORAGE_KEY = "orderlo-catalog-v27-angliss-mp-dp-go";
 
 function normalizeProduct(product: Product): Product {
   const sourceCategory =

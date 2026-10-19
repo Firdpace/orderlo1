@@ -38,6 +38,7 @@ export function ProductPage() {
     product.unitPrice != null && product.unitPrice > 0
       ? `${formatPrice(product.unitPrice)}${product.unitPriceLabel || ""}`
       : "";
+  const hasPrice = product.price > 0;
 
   return (
     <div className="page">
@@ -73,7 +74,7 @@ export function ProductPage() {
           ) : null}
           <li>
             <span>價錢（每訂貨單位）</span>
-            <strong>{formatPrice(product.price)}</strong>
+            <strong>{hasPrice ? formatPrice(product.price) : "查詢報價"}</strong>
           </li>
           {unitPrice ? (
             <li>

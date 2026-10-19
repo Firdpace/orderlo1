@@ -49,6 +49,7 @@ export function ProductTile({ product }: { product: Product }) {
     product.unitPrice != null && product.unitPrice > 0
       ? `${formatPrice(product.unitPrice)}${product.unitPriceLabel || ""}`
       : "";
+  const hasPrice = product.price > 0;
 
   const onAdd = () => {
     addItem(product.id);
@@ -73,7 +74,7 @@ export function ProductTile({ product }: { product: Product }) {
           {product.brand ? <span>{product.brand}</span> : null}
           {pkg ? <span>{pkg}</span> : null}
           <span className="product-tile-price">
-            {product.price > 0 ? formatPrice(product.price) : "查詢報價"}
+            {hasPrice ? formatPrice(product.price) : "查詢報價"}
           </span>
           {unitPrice ? <span className="product-tile-unitprice">{unitPrice}</span> : null}
         </div>
