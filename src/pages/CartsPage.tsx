@@ -580,7 +580,7 @@ export function CartsPage() {
                   <span className="meta">
                     {new Date(entry.createdAt).toLocaleString()}
                     {entry.total > 0
-                      ? ` · HKD ${entry.total.toFixed(2)}`
+                      ? ` · $${Number(entry.total).toFixed(2).replace(/\.00$/, "")}`
                       : ""}
                   </span>
                 </div>
@@ -588,7 +588,7 @@ export function CartsPage() {
                   {entry.lines.map((line, i) => (
                     <li key={`${entry.id}-${i}`}>
                       {line.subtotal > 0
-                        ? `${line.name} × ${line.qty} = HKD ${line.subtotal.toFixed(2)}`
+                        ? `${line.name} × ${line.qty} = $${Number(line.subtotal).toFixed(2).replace(/\.00$/, "")}`
                         : `${line.name} × ${line.qty}`}
                     </li>
                   ))}
