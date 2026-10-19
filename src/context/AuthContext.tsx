@@ -9,11 +9,14 @@ import {
 } from "react";
 import {
   type LocalUser,
+  type UserStatus,
+  changePassword as authChangePassword,
+  ensureSeedUsers,
   listUsers,
   login as authLogin,
   logout as authLogout,
   resolveSessionUser,
-  setUserEnabled as authSetEnabled,
+  setUserStatus as authSetStatus,
   signup as authSignup,
 } from "../lib/auth";
 import {
@@ -29,10 +32,16 @@ type AuthContextValue = {
   /** Admin PIN unlocked for this browser tab (Admin tools). */
   adminUnlocked: boolean;
   login: (phone: string, password: string) => Promise<void>;
-  signup: (phone: string, password: string) => Promise<void>;
+  /** Returns the created user; pending signups stay logged out. */
+  signup: (phone: string, password: string) => Promise<LocalUser>;
   logout: () => void;
   refreshUsers: () => Promise<LocalUser[]>;
+  setUserStatus: (userId: string, status: UserStatus) => Promise<LocalUser[]>;
   setUserEnabled: (userId: string, enabled: boolean) => Promise<LocalUser[]>;
+  changePassword: (
+    currentPassword: string,
+    nextPassword: string,
+  ) => Promise<void>;
   unlockAdmin: (pin: string) => Promise<boolean>;
   lockAdmin: () => void;
   changePin: (current: string, next: string) => Promise<boolean>;
@@ -51,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
+        await ensureSeedUsers();
         const u = await resolveSessionUser();
         if (!cancelled) setUser(u);
       } finally {
@@ -69,7 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = useCallback(async (phone: string, password: string) => {
     const u = await authSignup(phone, password);
-    setUser(u);
+    // Pending accounts are not auto-logged-in.
+    return u;
   }, []);
 
   const logout = useCallback(() => {
@@ -81,13 +92,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUsers = useCallback(() => listUsers(), []);
 
-  const setUserEnabled = useCallback(
-    async (userId: string, enabled: boolean) => {
-      const users = await authSetEnabled(userId, enabled);
+  const setUserStatus = useCallback(
+    async (userId: string, status: UserStatus) => {
+      const users = await authSetStatus(userId, status);
       setUser((prev) => {
         if (!prev) return prev;
         const updated = users.find((u) => u.id === prev.id);
-        if (updated && !updated.enabled) {
+        if (updated && updated.status !== "enabled") {
           authLogout();
           writeAdminPinSession(false);
           setAdminUnlocked(false);
@@ -98,6 +109,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return users;
     },
     [],
+  );
+
+  const setUserEnabled = useCallback(
+    async (userId: string, enabled: boolean) => {
+      return setUserStatus(userId, enabled ? "enabled" : "disabled");
+    },
+    [setUserStatus],
+  );
+
+  const changePassword = useCallback(
+    async (currentPassword: string, nextPassword: string) => {
+      if (!user) throw new Error("請先登入。");
+      await authChangePassword(user.id, currentPassword, nextPassword);
+    },
+    [user],
   );
 
   const unlockAdmin = useCallback(async (pin: string) => {
@@ -124,7 +150,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signup,
       logout,
       refreshUsers,
+      setUserStatus,
       setUserEnabled,
+      changePassword,
       unlockAdmin,
       lockAdmin,
       changePin,
@@ -137,7 +165,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signup,
       logout,
       refreshUsers,
+      setUserStatus,
       setUserEnabled,
+      changePassword,
       unlockAdmin,
       lockAdmin,
       changePin,

@@ -9,6 +9,7 @@ export function Layout() {
   const { adminUnlocked, user, logout } = useAuth();
   const location = useLocation();
   const hideTabbar = location.pathname.startsWith("/admin");
+  const showAdmin = Boolean(user?.isAdmin);
 
   return (
     <div className="app-shell">
@@ -18,16 +19,22 @@ export function Layout() {
         </NavLink>
         <div className="topbar-actions">
           {user ? (
-            <span className="user-chip" title={user.phoneE164}>
+            <NavLink
+              to="/profile"
+              className="user-chip user-chip-link"
+              title={`${user.phoneE164} · 我的`}
+            >
               {displayPhone(user.phoneE164)}
-            </span>
+            </NavLink>
           ) : null}
-          <NavLink
-            to={adminUnlocked ? "/admin" : "/admin/login"}
-            className="admin-chip"
-          >
-            Admin
-          </NavLink>
+          {showAdmin ? (
+            <NavLink
+              to={adminUnlocked ? "/admin" : "/admin/login"}
+              className="admin-chip"
+            >
+              Admin
+            </NavLink>
+          ) : null}
           <button type="button" className="logout-chip" onClick={logout}>
             登出
           </button>
@@ -62,6 +69,12 @@ export function Layout() {
           <NavLink to="/carts" className={({ isActive }) => (isActive ? "tab active" : "tab")}>
             購物車
             {itemCount > 0 && <span className="tab-badge">{itemCount}</span>}
+          </NavLink>
+          <NavLink
+            to="/profile"
+            className={({ isActive }) => (isActive ? "tab active" : "tab")}
+          >
+            我的
           </NavLink>
         </nav>
       )}

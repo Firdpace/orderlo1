@@ -5,7 +5,7 @@ type Mode = "login" | "signup";
 
 /**
  * Primary app gate: HK phone + password.
- * Site admin PIN protects Admin tools only.
+ * Site admin PIN protects Admin tools only (admin account only).
  */
 export function AuthGate({ children }: { children: ReactNode }) {
   const { ready, user, login, signup } = useAuth();
@@ -14,6 +14,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (!ready) {
@@ -29,11 +30,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+    setInfo(null);
     setBusy(true);
     try {
       if (mode === "signup") {
         if (password !== confirm) throw new Error("兩次密碼不一致。");
         await signup(phone, password);
+        setMode("login");
+        setPassword("");
+        setConfirm("");
+        setInfo("註冊成功。帳戶待管理員審批後才可登入。");
       } else {
         await login(phone, password);
       }
@@ -51,7 +57,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <p className="meta">
           {mode === "login"
             ? "用香港手機號碼同密碼登入。"
-            : "註冊帳戶 — 8 位香港手機號碼 + 自訂密碼。"}
+            : "註冊帳戶 — 8 位香港手機號碼 + 自訂密碼。註冊後需管理員批准。"}
         </p>
 
         <label>
@@ -96,6 +102,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         ) : null}
 
         {error ? <p className="form-error">{error}</p> : null}
+        {info ? <p className="auth-info">{info}</p> : null}
 
         <button
           type="submit"
@@ -111,6 +118,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           onClick={() => {
             setMode(mode === "login" ? "signup" : "login");
             setError(null);
+            setInfo(null);
           }}
         >
           {mode === "login" ? "未有帳戶？註冊" : "已有帳戶？登入"}

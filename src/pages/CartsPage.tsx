@@ -1,19 +1,17 @@
 import { Link } from "react-router-dom";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { formatMoq, formatPrice } from "../data/seed";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { useCatalog } from "../context/CatalogContext";
 import { moqProgress } from "../lib/moq";
+import { listShopsForUser, type Shop } from "../lib/shops";
 import {
   listWaHistoryForUser,
   saveWaHistoryEntry,
   type WaHistoryEntry,
 } from "../lib/waHistory";
-import {
-  buildWhatsAppOrderMessage,
-  whatsappOrderUrl,
-} from "../lib/whatsapp";
+import { buildWhatsAppOrderMessage } from "../lib/whatsapp";
 
 async function copyText(message: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
@@ -31,6 +29,62 @@ async function copyText(message: string): Promise<void> {
   document.body.removeChild(ta);
 }
 
+function QtyInput(props: {
+  value: number;
+  onCommit: (next: number) => void;
+  onDecrement: () => void;
+  onIncrement: () => void;
+}) {
+  const [draft, setDraft] = useState(String(props.value));
+
+  useEffect(() => {
+    setDraft(String(props.value));
+  }, [props.value]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed === "") {
+      setDraft(String(props.value));
+      return;
+    }
+    const n = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(n) || n < 0) {
+      setDraft(String(props.value));
+      return;
+    }
+    // 0 removes the line (matches +/- stepper / setQuantity behavior).
+    props.onCommit(n);
+    if (n > 0) setDraft(String(n));
+  };
+
+  return (
+    <div className="qty-row">
+      <button type="button" aria-label="Decrease" onClick={props.onDecrement}>
+        −
+      </button>
+      <input
+        className="qty-input"
+        type="number"
+        inputMode="numeric"
+        min={0}
+        step={1}
+        value={draft}
+        aria-label="Quantity"
+        onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.currentTarget.blur();
+          }
+        }}
+      />
+      <button type="button" aria-label="Increase" onClick={props.onIncrement}>
+        +
+      </button>
+    </div>
+  );
+}
+
 export function CartsPage() {
   const {
     carts,
@@ -41,15 +95,28 @@ export function CartsPage() {
     clearVendorCart,
     vendorCount,
   } = useCart();
-  const { getVendor, salesWhatsapp } = useCatalog();
+  const { getVendor } = useCatalog();
   const { user } = useAuth();
   const [openId, setOpenId] = useState<string | null>(carts[0]?.vendorId ?? null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [historyTick, setHistoryTick] = useState(0);
   const [historyCopiedId, setHistoryCopiedId] = useState<string | null>(null);
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [pickerVendorId, setPickerVendorId] = useState<string | null>(null);
+  const [lastMessage, setLastMessage] = useState<{
+    vendorId: string;
+    text: string;
+  } | null>(null);
 
-  // historyTick bumps after save / refresh so we re-read localStorage.
+  useEffect(() => {
+    if (!user) {
+      setShops([]);
+      return;
+    }
+    setShops(listShopsForUser(user.id));
+  }, [user, pickerVendorId, copiedId]);
+
   const history =
     user && historyTick >= 0
       ? listWaHistoryForUser(user.id)
@@ -96,21 +163,44 @@ export function CartsPage() {
     );
   }
 
-  const copyOrder = async (
-    vendorId: string,
-    built: ReturnType<typeof buildWhatsAppOrderMessage>,
-    vendorName: string,
-  ) => {
+  const beginCopy = (vendorId: string) => {
+    setCopyError(null);
+    if (!user) return;
+    const currentShops = listShopsForUser(user.id);
+    setShops(currentShops);
+    if (currentShops.length === 0) {
+      setCopyError("請先在個人資料新增店舖，再複製落單訊息。");
+      setCopiedId(vendorId);
+      return;
+    }
+    setPickerVendorId(vendorId);
+  };
+
+  const confirmCopyWithShop = async (shop: Shop) => {
+    const vendorId = pickerVendorId;
+    if (!vendorId) return;
+    const vendor = getVendor(vendorId);
+    if (!vendor) return;
+    const lines = getCartLines(vendorId);
+    const subtotal = getVendorSubtotal(vendorId);
+    const built = buildWhatsAppOrderMessage({
+      vendor,
+      shopName: shop.name,
+      lines,
+      subtotal,
+    });
+    setPickerVendorId(null);
     setCopyError(null);
     try {
       await copyText(built.text);
       persistOrder({
         vendorId,
-        vendorName,
+        vendorName: vendor.name,
         messageText: built.text,
         lines: built.lines,
         total: built.total,
       });
+      setLastMessage({ vendorId, text: built.text });
       setCopiedId(vendorId);
       window.setTimeout(
         () => setCopiedId((id) => (id === vendorId ? null : id)),
@@ -118,30 +208,12 @@ export function CartsPage() {
       );
     } catch {
       setCopyError("複製失敗，請手動選取訊息。");
+      setLastMessage({ vendorId, text: built.text });
       setCopiedId(vendorId);
     }
   };
 
-  const openWhatsApp = (
-    vendorId: string,
-    phone: string,
-    built: ReturnType<typeof buildWhatsAppOrderMessage>,
-    vendorName: string,
-  ) => {
-    persistOrder({
-      vendorId,
-      vendorName,
-      messageText: built.text,
-      lines: built.lines,
-      total: built.total,
-    });
-    if (!phone) {
-      setCopyError("未設定業務 WhatsApp 號碼，請先複製訊息或於管理員設定。");
-      setCopiedId(vendorId);
-      return;
-    }
-    window.open(whatsappOrderUrl(phone, built.text), "_blank", "noopener,noreferrer");
-  };
+  const pickerVendor = pickerVendorId ? getVendor(pickerVendorId) : null;
 
   return (
     <div className="page page-pad">
@@ -149,10 +221,50 @@ export function CartsPage() {
         <h1>購物車</h1>
         <p>
           {vendorCount > 0
-            ? `${vendorCount} 家供應商 · 達 MOQ 後複製或開啟 WhatsApp；會自動儲存最近 2 次落單訊息。`
+            ? `${vendorCount} 家供應商 · 達 MOQ 後複製 WhatsApp 訊息；會自動儲存最近 2 次落單訊息。`
             : "暫無進行中購物車；可重看下方 WhatsApp 紀錄。"}
         </p>
       </header>
+
+      {pickerVendorId && pickerVendor ? (
+        <div
+          className="shop-picker-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="shop-picker-title"
+        >
+          <div className="shop-picker-sheet">
+            <h2 id="shop-picker-title">揀送貨店舖</h2>
+            <p className="meta">
+              複製給 {pickerVendor.name} 的落單訊息前，請揀一間店舖。
+            </p>
+            <ul className="shop-picker-list">
+              {shops.map((shop) => (
+                <li key={shop.id}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-block shop-picker-item"
+                    onClick={() => void confirmCopyWithShop(shop)}
+                  >
+                    <strong>{shop.name}</strong>
+                    <span className="meta">{shop.deliveryAddress}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <Link to="/profile" className="btn btn-ghost btn-block">
+              管理店舖（個人資料）
+            </Link>
+            <button
+              type="button"
+              className="btn btn-ghost btn-block"
+              onClick={() => setPickerVendorId(null)}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="drawer-stack">
         {carts.map((cart) => {
@@ -167,11 +279,9 @@ export function CartsPage() {
             quantity,
             amount: subtotal,
           });
-          const phone = vendor.whatsappSales || salesWhatsapp;
-          const built = buildWhatsAppOrderMessage({ vendor, lines, subtotal });
-          const message = built.text;
           const copied = copiedId === cart.vendorId;
-          const vendorHistory = history.filter((h) => h.vendorId === cart.vendorId);
+          const messagePreview =
+            lastMessage?.vendorId === cart.vendorId ? lastMessage.text : null;
 
           return (
             <section
@@ -240,27 +350,18 @@ export function CartsPage() {
                             <p className="cart-line-subtotal">
                               {formatPrice(lineTotal)}
                             </p>
-                            <div className="qty-row">
-                              <button
-                                type="button"
-                                aria-label="Decrease"
-                                onClick={() =>
-                                  setQuantity(cart.vendorId, product.id, qty - 1)
-                                }
-                              >
-                                −
-                              </button>
-                              <span>{qty}</span>
-                              <button
-                                type="button"
-                                aria-label="Increase"
-                                onClick={() =>
-                                  setQuantity(cart.vendorId, product.id, qty + 1)
-                                }
-                              >
-                                +
-                              </button>
-                            </div>
+                            <QtyInput
+                              value={qty}
+                              onDecrement={() =>
+                                setQuantity(cart.vendorId, product.id, qty - 1)
+                              }
+                              onIncrement={() =>
+                                setQuantity(cart.vendorId, product.id, qty + 1)
+                              }
+                              onCommit={(next) =>
+                                setQuantity(cart.vendorId, product.id, next)
+                              }
+                            />
                           </div>
                         </li>
                       );
@@ -276,43 +377,33 @@ export function CartsPage() {
                         <button
                           type="button"
                           className="btn btn-primary btn-block"
-                          onClick={() =>
-                            void copyOrder(cart.vendorId, built, vendor.name)
-                          }
+                          onClick={() => beginCopy(cart.vendorId)}
                         >
-                          {copied ? "已複製並儲存" : "複製並儲存 WhatsApp 訊息"}
+                          {copied ? "已複製並儲存" : "複製 WhatsApp 訊息"}
                         </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-block"
-                          onClick={() =>
-                            openWhatsApp(
-                              cart.vendorId,
-                              phone,
-                              built,
-                              vendor.name,
-                            )
-                          }
-                        >
-                          開啟 WhatsApp
-                        </button>
-                        {copied ? (
+                        {copied && messagePreview ? (
                           <div className="wa-copy-panel">
                             <p className="meta">
-                              已複製並儲存。可開啟 WhatsApp
-                              {phone ? `（${phone}）` : ""} 貼上傳送。
+                              已複製並儲存。請自行開啟 WhatsApp 貼上傳送。
                             </p>
                             <textarea
                               className="wa-copy-text"
                               readOnly
                               rows={8}
-                              value={message}
+                              value={messagePreview}
                               onFocus={(e) => e.currentTarget.select()}
                             />
                           </div>
                         ) : null}
                         {copyError && copiedId === cart.vendorId ? (
-                          <p className="meta">{copyError}</p>
+                          <p className="meta">
+                            {copyError}{" "}
+                            {copyError.includes("個人資料") ? (
+                              <Link to="/profile" className="text-link">
+                                前往個人資料
+                              </Link>
+                            ) : null}
+                          </p>
                         ) : null}
                       </>
                     ) : (
@@ -324,36 +415,6 @@ export function CartsPage() {
                         未達 MOQ，未能確認
                       </button>
                     )}
-                    {vendorHistory.length > 0 ? (
-                      <div className="wa-history-inline">
-                        <p className="meta">
-                          此供應商最近 {vendorHistory.length} 則落單訊息
-                        </p>
-                        {vendorHistory.map((entry) => (
-                          <button
-                            key={entry.id}
-                            type="button"
-                            className="btn btn-ghost btn-block"
-                            onClick={() => {
-                              void copyText(entry.messageText).then(() => {
-                                setHistoryCopiedId(entry.id);
-                                window.setTimeout(
-                                  () =>
-                                    setHistoryCopiedId((id) =>
-                                      id === entry.id ? null : id,
-                                    ),
-                                  1800,
-                                );
-                              });
-                            }}
-                          >
-                            {historyCopiedId === entry.id
-                              ? "已再複製"
-                              : `再複製 · ${new Date(entry.createdAt).toLocaleString()} · HKD ${entry.total.toFixed(2)}`}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
                     <button
                       type="button"
                       className="btn btn-ghost btn-block"
@@ -372,8 +433,7 @@ export function CartsPage() {
       <section className="wa-history-section">
         <h2>WhatsApp 落單紀錄</h2>
         <p className="meta">
-          每個供應商最多保留最近 2 則（此帳戶）。複製或開啟 WhatsApp
-          時自動儲存。
+          每個供應商最多保留最近 2 則（此帳戶）。複製訊息時自動儲存。
         </p>
         {history.length === 0 ? (
           <p className="meta">未有儲存紀錄。</p>

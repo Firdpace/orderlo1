@@ -121,6 +121,10 @@ textarea {
   white-space: nowrap;
 }
 
+.user-chip-link {
+  text-decoration: none;
+}
+
 .logout-chip {
   font-size: 0.78rem;
   font-weight: 600;
@@ -130,6 +134,12 @@ textarea {
   background: transparent;
   color: var(--olive);
   cursor: pointer;
+  text-decoration: none;
+}
+
+.profile-chip {
+  display: inline-flex;
+  align-items: center;
 }
 
 @media (min-width: 400px) {
@@ -237,7 +247,7 @@ textarea {
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding: 8px 10px env(safe-area-inset-bottom);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   background: color-mix(in srgb, var(--bone) 92%, transparent);
   backdrop-filter: blur(12px);
@@ -251,9 +261,10 @@ textarea {
   place-items: center;
   border-radius: 12px;
   color: color-mix(in srgb, var(--ink) 55%, transparent);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  padding: 8px 4px;
+  padding: 8px 2px;
+  text-align: center;
 }
 
 .tab.active {
@@ -1360,7 +1371,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
 }
 
 .qty-row button {
@@ -1370,6 +1381,27 @@ textarea {
   border: 1px solid var(--mist);
   background: var(--bone);
   cursor: pointer;
+  flex-shrink: 0;
+}
+
+.qty-input {
+  width: 52px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--mist);
+  background: #fff;
+  text-align: center;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 0 4px;
+  -moz-appearance: textfield;
+}
+
+.qty-input::-webkit-outer-spin-button,
+.qty-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .cart-drawer-actions {
@@ -1553,13 +1585,6 @@ textarea {
   line-height: 1.45;
 }
 
-.wa-history-inline {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .user-admin-list {
   list-style: none;
   margin: 0 0 12px;
@@ -1580,11 +1605,121 @@ textarea {
   background: color-mix(in srgb, white 65%, var(--bone));
 }
 
-.user-admin-row > div {
+.user-admin-row > div:first-child {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+}
+
+.user-admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.auth-info {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--olive);
+  line-height: 1.4;
+}
+
+.shop-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shop-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--mist);
+  border-radius: 12px;
+  background: color-mix(in srgb, white 65%, var(--bone));
+}
+
+.shop-row > div:first-child {
+  min-width: 0;
+}
+
+.shop-row .meta {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+.shop-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.shop-form-title {
+  margin: 8px 0 0;
+  font-size: 1rem;
+}
+
+.shop-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  display: grid;
+  align-items: end;
+  padding: 16px;
+}
+
+.shop-picker-sheet {
+  background: var(--bone);
+  border-radius: 20px 20px 16px 16px;
+  padding: 20px 16px 16px;
+  display: grid;
+  gap: 10px;
+  max-height: min(80dvh, 560px);
+  overflow: auto;
+  box-shadow: 0 -8px 32px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.shop-picker-sheet h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+}
+
+.shop-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shop-picker-item {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  white-space: normal;
+}
+
+@media (min-width: 560px) {
+  .shop-picker-overlay {
+    align-items: center;
+    justify-items: center;
+  }
+
+  .shop-picker-sheet {
+    width: min(420px, 100%);
+    border-radius: 16px;
+  }
 }
 
 @media (min-width: 481px) {

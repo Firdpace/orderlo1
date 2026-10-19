@@ -3,15 +3,21 @@ import { Link, Navigate } from "react-router-dom";
 import { formatMoq } from "../data/seed";
 import { useAuth } from "../context/AuthContext";
 import { useCatalog } from "../context/CatalogContext";
-import { displayPhone, type LocalUser } from "../lib/auth";
+import {
+  displayPhone,
+  statusLabel,
+  type LocalUser,
+  type UserStatus,
+} from "../lib/auth";
 import { isValidPin } from "../lib/pin";
 
 export function AdminLoginPage() {
-  const { adminUnlocked, unlockAdmin } = useAuth();
+  const { user, adminUnlocked, unlockAdmin } = useAuth();
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  if (!user?.isAdmin) return <Navigate to="/" replace />;
   if (adminUnlocked) return <Navigate to="/admin" replace />;
 
   const onSubmit = async (event: FormEvent) => {
@@ -71,7 +77,7 @@ export function AdminPage() {
     changePin,
     user: me,
     refreshUsers,
-    setUserEnabled,
+    setUserStatus,
   } = useAuth();
   const {
     vendors,
@@ -102,10 +108,11 @@ export function AdminPage() {
   const quote = quotations.find((q) => q.vendorId === vendorId);
 
   useEffect(() => {
-    if (!adminUnlocked) return;
+    if (!adminUnlocked || !me?.isAdmin) return;
     void refreshUsers().then(setUsers);
-  }, [adminUnlocked, refreshUsers]);
+  }, [adminUnlocked, me?.isAdmin, refreshUsers]);
 
+  if (!me?.isAdmin) return <Navigate to="/" replace />;
   if (!adminUnlocked) return <Navigate to="/admin/login" replace />;
 
   const onUpload = async (file: File | null) => {
@@ -124,6 +131,12 @@ export function AdminPage() {
     }
   };
 
+  const applyStatus = async (u: LocalUser, next: UserStatus) => {
+    const list = await setUserStatus(u.id, next);
+    setUsers(list);
+    setStatus(`${displayPhone(u.phoneE164)} → ${statusLabel(next)}`);
+  };
+
   return (
     <div className="page page-pad">
       <header className="page-header">
@@ -134,8 +147,7 @@ export function AdminPage() {
       <section className="admin-card">
         <h2>業務 WhatsApp</h2>
         <p className="meta">
-          落單訊息只含品名、數量同小計（HKD）。複製或開啟 WhatsApp
-          時會儲存最近紀錄。
+          落單訊息只含店舖問候、品名、數量同小計（HKD）。複製時會儲存最近紀錄。
         </p>
         <form
           className="checkout-form"
@@ -256,7 +268,8 @@ export function AdminPage() {
       <section className="admin-card">
         <h2>管理用戶</h2>
         <p className="meta">
-          啟用或停用帳戶。首個註冊用戶為管理員。停用後無法登入。
+          新註冊為待審批。可批准啟用、停用。唯獨 +852 66169905
+          為管理員。
         </p>
         {users.length === 0 ? (
           <p className="meta">未有註冊用戶。</p>
@@ -268,28 +281,49 @@ export function AdminPage() {
                   <strong>{displayPhone(u.phoneE164)}</strong>
                   <span className="meta">
                     {u.isAdmin ? "Admin · " : ""}
-                    {u.enabled ? "已啟用" : "已停用"}
+                    {statusLabel(u.status)}
                     {me?.id === u.id ? " · 你" : ""}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  className={`btn ${u.enabled ? "btn-ghost" : "btn-secondary"}`}
-                  disabled={me?.id === u.id}
-                  onClick={() => {
-                    void (async () => {
-                      const next = await setUserEnabled(u.id, !u.enabled);
-                      setUsers(next);
-                      setStatus(
-                        u.enabled
-                          ? `已停用 ${displayPhone(u.phoneE164)}`
-                          : `已啟用 ${displayPhone(u.phoneE164)}`,
-                      );
-                    })();
-                  }}
-                >
-                  {u.enabled ? "停用" : "啟用"}
-                </button>
+                <div className="user-admin-actions">
+                  {u.status === "pending" ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => void applyStatus(u, "enabled")}
+                    >
+                      批准
+                    </button>
+                  ) : null}
+                  {u.status !== "enabled" && u.status !== "pending" ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => void applyStatus(u, "enabled")}
+                    >
+                      啟用
+                    </button>
+                  ) : null}
+                  {u.status === "enabled" && !u.isAdmin ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      disabled={me?.id === u.id}
+                      onClick={() => void applyStatus(u, "disabled")}
+                    >
+                      停用
+                    </button>
+                  ) : null}
+                  {u.status === "pending" ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => void applyStatus(u, "disabled")}
+                    >
+                      拒絕
+                    </button>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>

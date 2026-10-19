@@ -8,17 +8,18 @@ export type BuiltWhatsApp = {
 };
 
 /**
- * Minimal WhatsApp order text: vendor once, then
+ * WhatsApp order text: shop greeting header, then
  * `name × qty = subtotal` lines, optional grand total.
- * Per-line fields are product name, qty, and subtotal only.
+ * Vendor name is intentionally omitted.
  */
 export function buildWhatsAppOrderMessage(args: {
   vendor: Vendor;
+  shopName: string;
   lines: Array<{ product: Product; quantity: number; lineTotal: number }>;
   subtotal?: number;
 }): BuiltWhatsApp {
-  const { vendor, lines } = args;
-  const header = vendor.name;
+  const { shopName, lines } = args;
+  const header = `你好 ${shopName.trim()} 想叫貨 最快送`;
   let total = 0;
   const historyLines: WaHistoryLine[] = [];
   const body = lines
@@ -37,14 +38,4 @@ export function buildWhatsAppOrderMessage(args: {
     lines: historyLines,
     total,
   };
-}
-
-/** Digits-only phone for wa.me (no +). */
-export function waMePhone(e164: string): string {
-  return e164.replace(/\D/g, "");
-}
-
-export function whatsappOrderUrl(phone: string, message: string) {
-  const digits = waMePhone(phone);
-  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }

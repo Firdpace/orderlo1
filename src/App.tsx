@@ -11,6 +11,7 @@ import { VendorPage } from "./pages/VendorPage";
 import { ProductPage } from "./pages/ProductPage";
 import { ComparePage } from "./pages/ComparePage";
 import { CartsPage } from "./pages/CartsPage";
+import { ProfilePage } from "./pages/ProfilePage";
 import { AdminLoginPage, AdminPage } from "./pages/AdminPage";
 
 export default function App() {
@@ -29,6 +30,7 @@ export default function App() {
                   <Route path="product/:productId" element={<ProductPage />} />
                   <Route path="compare/:productId" element={<ComparePage />} />
                   <Route path="carts" element={<CartsPage />} />
+                  <Route path="profile" element={<ProfilePage />} />
                   <Route path="admin/login" element={<AdminLoginPage />} />
                   <Route path="admin" element={<AdminPage />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
