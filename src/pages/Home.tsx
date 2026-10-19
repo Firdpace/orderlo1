@@ -74,7 +74,7 @@ export function Home() {
         </div>
         <div className="hero-content reveal">
           <p className="brand-mark">Orderlo</p>
-          <h1 className="hero-headline">先選貨類，或直接揀供應商。</h1>
+          <h1 className="hero-headline">格價 搵貨 落單</h1>
           <p className="hero-lede">
             {products.length.toLocaleString()} 項報價 · {vendors.length}{" "}
             家供應商 · 各家獨立購物車，達 MOQ 後 WhatsApp 確認給業務。
