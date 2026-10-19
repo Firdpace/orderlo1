@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useDeferredValue, useMemo, useState } from "react";
+import heroImage from "../assets/hero.jpg";
 import { formatMoq } from "../data/seed";
 import { ProductTile } from "../components/ProductTile";
 import { useCatalog } from "../context/CatalogContext";
@@ -68,10 +69,7 @@ export function Home() {
     <div className="page">
       <section className="hero">
         <div className="hero-media" aria-hidden="true">
-          <img
-            src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1400&q=80"
-            alt=""
-          />
+          <img src={heroImage} alt="" />
           <div className="hero-scrim" />
         </div>
         <div className="hero-content reveal">
