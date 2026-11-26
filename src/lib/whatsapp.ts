@@ -1,4 +1,16 @@
 ﻿import type { Product, Vendor } from "../data/types";
+import type { WaHistoryLine } from "./waHistory";
+
+export type BuiltWhatsApp = {
+  text: string;
+  lines: WaHistoryLine[];
+  total: number;
+};
+
+/** List price present — price ≤ 0 means 查報價 / ask quote. */
+export function isPricedProduct(product: Pick<Product, "price">): boolean {
+  return product.price > 0;
+}
 
 function money(amount: number): string {
   const cents = Math.round(Number(amount) * 100);
@@ -7,29 +19,69 @@ function money(amount: number): string {
   const abs = Math.abs(cents);
   const whole = Math.floor(abs / 100);
   const rem = abs % 100;
-  const core = rem === 0 ? `${whole}` : `${whole}.${String(rem).padStart(2, "0")}`;
+  const core =
+    rem === 0 ? `${whole}` : `${whole}.${String(rem).padStart(2, "0")}`;
   return `${neg ? "-" : ""}$${core}`;
 }
 
+const UNPRICED_SEPARATOR = "另外想問問以下報價同貨期";
+
+/**
+ * WhatsApp order text: shop greeting header, then priced lines
+ * (`• name × qty = $subtotal` + Total), then optional unpriced block
+ * after separator `另外想問問以下報價同貨期` (`• name × qty` only).
+ * Header, separator, and Total stay non-bulleted. Vendor name omitted.
+ */
 export function buildWhatsAppOrderMessage(args: {
   vendor: Vendor;
+  shopName: string;
   lines: Array<{ product: Product; quantity: number; lineTotal: number }>;
-  subtotal: number;
-}) {
-  const { vendor, lines, subtotal } = args;
-  const body = [
-    `訂貨 — ${vendor.name}`,
-    "",
-    ...lines.map((line) => {
-      const orderUnit =
-        line.product.orderUnit || line.product.unit || line.product.size || "";
-      return `• ${line.product.productNumber} | ${line.product.name} | ${line.quantity}${orderUnit ? ` × ${orderUnit}` : ""} | 小計 ${money(line.lineTotal)}`;
-    }),
-    "",
-    `合計: ${money(subtotal)}`,
-  ].join("\n");
+  subtotal?: number;
+}): BuiltWhatsApp {
+  const { shopName, lines } = args;
+  const header = `你好 ${shopName.trim()} 想叫貨 最快送`;
 
-  return body.replace(/HK\$/g, "$").replace(/HKD\s*/gi, "").replace(/\.00(?!\d)/g, "");
+  const priced = lines.filter((line) => isPricedProduct(line.product));
+  const unpriced = lines.filter((line) => !isPricedProduct(line.product));
+
+  let total = 0;
+  const historyLines: WaHistoryLine[] = [];
+  const parts: string[] = [header];
+
+  if (priced.length) {
+    const pricedBody = priced
+      .map((line) => {
+        const name = line.product.name || "Item";
+        const qty = line.quantity;
+        const lineSubtotal = line.lineTotal;
+        total += lineSubtotal;
+        historyLines.push({ name, qty, subtotal: lineSubtotal });
+        return `• ${name} × ${qty} = ${money(lineSubtotal)}`;
+      })
+      .join("\n");
+    parts.push(pricedBody);
+    parts.push(`Total: ${money(total)}`);
+  }
+
+  if (unpriced.length) {
+    // Always include separator before unpriced (even when there are no priced lines).
+    parts.push(UNPRICED_SEPARATOR);
+    const unpricedBody = unpriced
+      .map((line) => {
+        const name = line.product.name || "Item";
+        const qty = line.quantity;
+        historyLines.push({ name, qty, subtotal: 0 });
+        return `• ${name} × ${qty}`;
+      })
+      .join("\n");
+    parts.push(unpricedBody);
+  }
+
+  return {
+    text: parts.join("\n"),
+    lines: historyLines,
+    total,
+  };
 }
 
 export function whatsappOrderUrl(phone: string, message: string) {
